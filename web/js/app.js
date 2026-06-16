@@ -24,6 +24,8 @@ import { extractExistingName } from './lib/api_errors.js';
 import { describeImageStatus } from './lib/image_status.js';
 import { buildPlaybackOptions } from './lib/playback_options.js';
 import { decidePlaybackPath } from './lib/playback_decision.js';
+import { findFavByCid } from './lib/fav_lookup.js';
+import { targetValueToConfig } from './lib/playback_config.js';
 
 const $ = id => document.getElementById(id);
 
@@ -302,7 +304,7 @@ function renderSearchRow(r) {
   // from the start — disabled, with the existing favourite name surfaced
   // if it doesn't match what we'd have called it. Saves a click + alert
   // round-trip and tells the user where to look in their favourites list.
-  const existing = allFavs.find(f => f.cid.toLowerCase() === r.cid.toLowerCase());
+  const existing = findFavByCid(allFavs, r.cid);
   saveBtn.classList.add('icon-btn');
   if (existing) {
     markSearchRowSaved(saveBtn, existing.name, primary);
@@ -342,7 +344,7 @@ async function instaSave(r, btn, rowPrimary) {
   // Normally the button would already be in its "saved" state in this
   // case (set by renderSearchRow), but the cache could be stale if
   // another tab raced us.
-  const existing = allFavs.find(f => f.cid.toLowerCase() === r.cid.toLowerCase());
+  const existing = findFavByCid(allFavs, r.cid);
   if (existing) {
     markSearchRowSaved(btn, existing.name, rowPrimary);
     return;
@@ -527,7 +529,7 @@ function updateSaveButton() {
     return;
   }
   btn.style.display = '';
-  const fav = allFavs.find(f => f.cid.toLowerCase() === current.cid.toLowerCase());
+  const fav = findFavByCid(allFavs, current.cid);
   if (fav) {
     btn.textContent = `★ Saved as "${fav.name}"`;
     btn.disabled = true;
@@ -580,7 +582,7 @@ async function play(opts = {}) {
   let displayName = (opts.name || '').trim();
   let displaySub = (opts.altName || '').trim();
   if (!displayName) {
-    const fav = allFavs.find(f => f.cid.toLowerCase() === cid);
+    const fav = findFavByCid(allFavs, cid);
     if (fav) displayName = fav.name;
   }
   current = { cid, name: displayName, altName: displaySub };
@@ -762,27 +764,11 @@ function renderPlaybackTargets() {
 // here. `silent` suppresses the showError on save failure (used by
 // the auto-fallback in renderPlaybackTargets).
 async function persistPlaybackTarget(value, silent) {
-  let payload;
-  if (value === 'browser') {
-    payload = {
-      playback_mode: 'browser',
-      default_browser: '', default_browser_source: '',
-    };
-  } else if (value.startsWith('browser|')) {
-    const [, name, source] = value.split('|');
-    payload = {
-      playback_mode: 'browser',
-      default_browser: name || '', default_browser_source: source || '',
-    };
-  } else {
-    const [, name, source] = value.split('|');
-    payload = {
-      playback_mode: 'external',
-      default_player: name || '', default_player_source: source || '',
-    };
-  }
+  const payload = targetValueToConfig(value);
   try {
-    cfg = await api('/api/config', { method: 'POST', body: JSON.stringify(payload) });
+    cfg = await api('/api/config', {
+      method: 'POST', body: JSON.stringify(payload),
+    });
   } catch (e) {
     if (!silent) showError(e.message);
   }
@@ -899,7 +885,7 @@ async function saveFav() {
   // Skip the name prompt if this cid is already saved — the user is much
   // more likely re-clicking the button by accident than wanting a second
   // entry under a new name.
-  const existing = allFavs.find(f => f.cid.toLowerCase() === current.cid.toLowerCase());
+  const existing = findFavByCid(allFavs, current.cid);
   if (existing) {
     alert(`This stream is already in your favourites as “${existing.name}”.`);
     return;
