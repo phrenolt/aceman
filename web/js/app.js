@@ -18,6 +18,8 @@ import { shouldSearch, normaliseQuery, buildSearchUrl } from './lib/search_query
 import { saveLastPlay, loadLastPlay, clearLastPlay } from './lib/last_play.js';
 import { browserLabel, detectCurrentBrowser as detectCurrentBrowserPure }
   from './lib/browsers.js';
+import { extractPlayCid } from './lib/page_query.js';
+import { inBrowserSupported as inBrowserSupportedPure } from './lib/feature_detect.js';
 
 const $ = id => document.getElementById(id);
 
@@ -398,8 +400,10 @@ function clearNowPlaying() {
 
 let mpegtsPlayer = null;   // the live mpegts.createPlayer instance, or null
 
+// MediaSource + mpegts.js detection lives in ./lib/feature_detect.js
+// and is exercised against stub globals in the test suite.
 function inBrowserSupported() {
-  return typeof window.mpegts !== 'undefined' && window.mpegts.isSupported();
+  return inBrowserSupportedPure(window);
 }
 
 // Post-handoff "you can close this tab" screen.
@@ -1981,9 +1985,8 @@ async function toggleDesktopEntry() {
   // list has settled (so the now-playing card can show the saved name
   // if the cid is in favourites), then strip the query so a reload
   // doesn't auto-play again.
-  const _qs = new URLSearchParams(window.location.search);
-  const _playCid = (_qs.get('play') || '').toLowerCase();
-  if (/^[a-f0-9]{40}$/.test(_playCid)) {
+  const _playCid = extractPlayCid(window.location.search);
+  if (_playCid) {
     history.replaceState(null, '', window.location.pathname);
     $('cid-input').value = _playCid;
     // Desktop-entrypoint path: the user clicked an acestream:// link and
