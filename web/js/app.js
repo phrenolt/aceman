@@ -22,6 +22,7 @@ import { extractPlayCid } from './lib/page_query.js';
 import { inBrowserSupported as inBrowserSupportedPure } from './lib/feature_detect.js';
 import { extractExistingName } from './lib/api_errors.js';
 import { describeImageStatus } from './lib/image_status.js';
+import { buildPlaybackOptions } from './lib/playback_options.js';
 
 const $ = id => document.getElementById(id);
 
@@ -715,59 +716,31 @@ function renderPlaybackTargets() {
   sel.innerHTML = '';
   hint.textContent = ''; hint.className = 'gate-hint';
 
-  // "This tab" — primary, top-of-list. With filtering on (the
-  // default) we know the user's current browser is the one playing
-  // here, so we can name it explicitly: "This Firefox tab" reads
-  // clearer than the generic. With "show all" on, the bare option
-  // could correspond to any of several installs of the same browser
-  // so the generic label is honest.
   const showAll = $('show-all-browsers') && $('show-all-browsers').checked;
-  const bopt = document.createElement('option');
-  bopt.value = 'browser';
-  const thisLabel = (!showAll && _currentBrowserName)
-      ? `This ${_browserLabel(_currentBrowserName)} tab`
-      : 'This browser tab';
-  bopt.textContent = inBrowserSupported()
-      ? thisLabel
-      : `${thisLabel} — unsupported (mpegts.js / MSE unavailable)`;
-  bopt.disabled = !inBrowserSupported();
-  sel.appendChild(bopt);
+  const view = buildPlaybackOptions({
+    detectedPlayers,
+    detectedBrowsers,
+    currentBrowser: _currentBrowserName,
+    showAll,
+    inBrowserSupported: inBrowserSupported(),
+  });
 
-  // Other browsers — picking one opens a new window there which
-  // auto-resumes via ?play=<cid>. With filtering on (the default),
-  // skip any entry matching the current browser by name (UA can't
-  // distinguish system vs flatpak Firefox, so we hide both). With
-  // "show all" on, list every detected install — the user is
-  // explicitly opting into the noise.
-  const others = showAll
-      ? detectedBrowsers
-      : detectedBrowsers.filter(b => b.name !== _currentBrowserName);
-  if (others.length) {
-    const g = _addOptgroup(sel, 'Other browsers');
-    for (const b of others) {
+  // Apply the group tree to the <select>. Top-level options (label
+  // === null) attach directly; everything else gets an <optgroup>.
+  for (const group of view.groups) {
+    const parent = group.label ? _addOptgroup(sel, group.label) : sel;
+    for (const o of group.options) {
       const opt = document.createElement('option');
-      opt.value = `browser|${b.name}|${b.source}`;
-      opt.textContent = `${_browserLabel(b.name)} (${b.source})`;
-      g.appendChild(opt);
+      opt.value = o.value;
+      opt.textContent = o.text;
+      opt.disabled = o.disabled;
+      parent.appendChild(opt);
     }
   }
 
-  // External players — VLC/mpv via the acestream:// scheme handler.
-  if (detectedPlayers.length) {
-    const g = _addOptgroup(sel, 'External players');
-    for (const p of detectedPlayers) {
-      const opt = document.createElement('option');
-      opt.value = encodeTarget('external', p.name, p.source);
-      opt.textContent = `${p.name} (${p.source})`;
-      g.appendChild(opt);
-    }
-  }
-
-  if (!detectedPlayers.length && !detectedBrowsers.length && !inBrowserSupported()) {
+  if (!view.hasAnyTarget) {
     sel.disabled = true;
-    hint.textContent =
-      'No playback target available. Install a browser, vlc, or mpv ' +
-      '(system package or Flatpak), then reload.';
+    hint.textContent = view.hintMessage;
     hint.className = 'gate-hint warn';
     return;
   }
