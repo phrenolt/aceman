@@ -34,6 +34,7 @@ import { describeEngineToggle } from './lib/engine_toggle.js';
 import { describeSaveButton } from './lib/save_button.js';
 import { describeStorageBadge } from './lib/storage_badge.js';
 import { resolveDisplayName } from './lib/display_name.js';
+import { describePlayGate } from './lib/play_gate.js';
 
 const $ = id => document.getElementById(id);
 
@@ -969,25 +970,12 @@ async function refreshEngineStatus() {
 // poll so other code paths (e.g. just-started engine) can re-evaluate
 // immediately without waiting for the next tick.
 function refreshPlayGate() {
-  const s = engineState.last;
+  const view = describePlayGate(engineState.last);
   const btn = $('play-btn');
   const hint = $('play-hint');
-  // Same rule as refreshEngineStatus: require both flags so a phantom
-  // s.up (port answered, container reports down) doesn't enable Play
-  // and let the user start a session against something we don't manage.
-  if (s && s.container && s.up) {
-    btn.disabled = false;
-    hint.textContent = '';
-    hint.className = 'gate-hint';
-  } else if (s && s.image_installed === false) {
-    btn.disabled = true;
-    hint.textContent = 'install the engine image in Setup & tools first';
-    hint.className = 'gate-hint warn';
-  } else {
-    btn.disabled = true;
-    hint.textContent = 'engine is not running — start it from the Engine card';
-    hint.className = 'gate-hint warn';
-  }
+  btn.disabled = view.disabled;
+  hint.textContent = view.hint.text;
+  hint.className = view.hint.className;
 }
 
 async function toggleEngine() {
