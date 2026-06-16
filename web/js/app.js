@@ -31,6 +31,9 @@ import { describeDesktopStatus } from './lib/desktop_status.js';
 import { describePlayButton } from './lib/play_button.js';
 import { describeMoveButton } from './lib/move_button.js';
 import { describeEngineToggle } from './lib/engine_toggle.js';
+import { describeSaveButton } from './lib/save_button.js';
+import { describeStorageBadge } from './lib/storage_badge.js';
+import { resolveDisplayName } from './lib/display_name.js';
 
 const $ = id => document.getElementById(id);
 
@@ -524,26 +527,11 @@ function stopInBrowserPlayback() {
 function updateSaveButton() {
   const btn = $('save-btn');
   if (!btn) return;
-  // Hide entirely when there's no candidate cid to save — keeps the
-  // top row tight (just ▶ + content-id input) before the user starts
-  // anything. Shows up next to the input the moment a stream is
-  // playing, with flex-wrap letting it drop to the next line if the
-  // row is too narrow.
-  if (!current) {
-    btn.style.display = 'none';
-    return;
-  }
-  btn.style.display = '';
-  const fav = findFavByCid(allFavs, current.cid);
-  if (fav) {
-    btn.textContent = `★ Saved as "${fav.name}"`;
-    btn.disabled = true;
-    btn.title = 'Already in your favourites — open the Favourites column to manage.';
-  } else {
-    btn.textContent = 'Save as favourite';
-    btn.disabled = false;
-    btn.title = '';
-  }
+  const view = describeSaveButton(current, allFavs);
+  btn.style.display = view.visible ? '' : 'none';
+  btn.textContent = view.text;
+  btn.disabled = view.disabled;
+  btn.title = view.title;
 }
 
 // Updates the channel-name line above the playback URL. Empty primary
@@ -582,14 +570,12 @@ async function play(opts = {}) {
   const cid = parseId($('cid-input').value);
   if (!cid) { showError('Enter a 40-hex content id or an acestream:// URI.'); return; }
 
-  // Resolve a display name: argument first, then favourite lookup so a
-  // raw cid still gets its proper label when it's a saved channel.
-  let displayName = (opts.name || '').trim();
-  let displaySub = (opts.altName || '').trim();
-  if (!displayName) {
-    const fav = findFavByCid(allFavs, cid);
-    if (fav) displayName = fav.name;
-  }
+  // Resolve a display name: caller-provided name wins; missing
+  // primary falls back to a favourite lookup so a raw cid typed
+  // into the input still gets its proper saved label. See
+  // ./lib/display_name.js.
+  const { name: displayName, sub: displaySub } =
+      resolveDisplayName(opts, allFavs, cid);
   current = { cid, name: displayName, altName: displaySub };
   setTabTitle(displayName);
   // Persist the live cid + display name so a page reload can rehydrate
@@ -1574,15 +1560,9 @@ async function toggleDesktopEntry() {
         searchLabel.title = '';
       }
     }
-    $('storage-badge').textContent = mode === 'sqlite' ? 'sqlite' : 'browser';
-    // Tooltip surfaces the actual db path when running SQLite-backed —
-    // matches the same "label + path on hover" pattern used for Engine
-    // image, App launcher, etc.
-    $('storage-badge').title = mode === 'sqlite'
-      ? (cfg.favorites_path
-          ? `SQLite DB: ${cfg.favorites_path}`
-          : 'Favourites stored server-side in SQLite.')
-      : 'Favourites stored in browser localStorage (server has no sqlite3).';
+    const badge = describeStorageBadge(mode, cfg.favorites_path);
+    $('storage-badge').textContent = badge.text;
+    $('storage-badge').title = badge.title;
   } catch (e) {
     showError('Could not contact backend: ' + e.message);
   }
