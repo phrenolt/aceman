@@ -47,6 +47,7 @@ run_js() {
   # third-party image for no reason. Each subtree gets its own
   # read-only bind at the matching path inside the container so the
   # tests' relative imports (`../js/lib/foo.js`) keep working.
+  #
   podman run --rm --read-only \
     --tmpfs /tmp \
     -v "$PROJECT_ROOT/web/js":/work/web/js:ro,Z \
