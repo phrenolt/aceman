@@ -20,6 +20,8 @@ import { browserLabel, detectCurrentBrowser as detectCurrentBrowserPure }
   from './lib/browsers.js';
 import { extractPlayCid } from './lib/page_query.js';
 import { inBrowserSupported as inBrowserSupportedPure } from './lib/feature_detect.js';
+import { extractExistingName } from './lib/api_errors.js';
+import { describeImageStatus } from './lib/image_status.js';
 
 const $ = id => document.getElementById(id);
 
@@ -362,8 +364,7 @@ async function instaSave(r, btn, rowPrimary) {
     // the user gets if they re-search and see the result again later.
     markSearchRowSaved(btn, name, rowPrimary);
   } catch (e) {
-    const existingName = (e.status === 409 && e.data && e.data.existing_name)
-                       || e.existingName;
+    const existingName = extractExistingName(e);
     if (existingName) {
       // A race (another tab added it between our load and our POST) —
       // flip into the saved state instead of bouncing to the user.
@@ -947,8 +948,7 @@ async function saveFav() {
   } catch (e) {
     // Server / store had a stale-cache duplicate the pre-check missed
     // (e.g. another tab added it between loads).
-    const existingName = (e.status === 409 && e.data && e.data.existing_name)
-                       || e.existingName;
+    const existingName = extractExistingName(e);
     if (existingName) {
       alert(`This stream is already in your favourites as “${existingName}”.`);
     } else {
@@ -1354,74 +1354,58 @@ function mountAcemanSelect(native) {
 let imagePoll = null;
 
 async function refreshImageStatus() {
-  let s;
-  try {
-    s = await api('/api/engine/image');
-  } catch (e) {
-    $('image-status').textContent = 'unavailable';
-    $('image-status').className = 'status bad';
-    return;
+  let s = null;
+  try { s = await api('/api/engine/image'); }
+  catch (_) { /* leave s = null; describeImageStatus collapses to 'unavailable' */ }
+
+  const view = describeImageStatus(s);
+
+  // Top-line status badge + registry tag (the tag is broker-supplied
+  // and only present in a successful fetch).
+  $('image-status').textContent = view.status;
+  $('image-status').className = view.statusClass;
+  if (s) {
+    $('image-tag').textContent = s.tag || '';
+    if (s.tag) $('image-label').title = s.tag;
   }
-  $('image-tag').textContent = s.tag;
-  // Expose the registry-style tag via the row's label tooltip — the
-  // .has-tooltip class on the label gives a subtle dashed underline +
-  // help cursor so the user sees there's something to hover over.
-  if (s.tag) $('image-label').title = s.tag;
+
   const ins = $('image-install');
   const un = $('image-uninstall');
-  const log = $('image-log');
-  const hint = $('image-hint');
-  // Empty hint defaults to hidden; only revealed when an actual error
-  // string is set below. Buttons explain themselves via title= now.
-  hint.textContent = '';
-  hint.className = 'status';
-  hint.style.display = 'none';
+  ins.textContent = view.installButton.text;
+  ins.disabled = view.installButton.disabled;
+  un.disabled = !view.uninstallEnabled;
 
+  // Build log (auto-scrolled to the bottom so new lines are visible).
+  const log = $('image-log');
+  log.textContent = view.log.lines.join('\n');
+  log.scrollTop = log.scrollHeight;
   const logWrap = $('image-log-wrap');
-  if (s.state === 'building') {
-    $('image-status').textContent = 'building…';
-    $('image-status').className = 'status';
-    ins.disabled = true; ins.textContent = 'Building…';
-    un.disabled = true;
-    // While building, show the build log expanded so the user can
-    // watch progress without an extra click.
-    if (logWrap) { logWrap.style.display = ''; logWrap.open = true; }
-    log.textContent = (s.log_tail || []).join('\n');
-    log.scrollTop = log.scrollHeight;
-    if (!imagePoll) imagePoll = setInterval(refreshImageStatus, 1000);
-  } else {
-    if (imagePoll) { clearInterval(imagePoll); imagePoll = null; }
-    if (s.installed) {
-      $('image-status').textContent = 'installed';
-      $('image-status').className = 'status ok';
-      ins.disabled = false; ins.textContent = 'Rebuild';
-      un.disabled = false;
-      // After build finishes, keep the wrapper visible (so the log is
-      // still available) but collapsed — closes the "log fills half
-      // the card forever" complaint. User can re-open it any time.
-      if (logWrap) {
-        logWrap.style.display = (s.log_tail || []).length ? '' : 'none';
-        logWrap.open = false;
-      }
-    } else {
-      $('image-status').textContent = 'not installed';
-      $('image-status').className = 'status bad';
-      ins.disabled = false; ins.textContent = 'Install';
-      un.disabled = true;
-    }
-    if (s.log_tail && s.log_tail.length) {
-      log.textContent = s.log_tail.join('\n');
-      log.scrollTop = log.scrollHeight;
-    }
-    if (s.error) {
-      hint.textContent = s.error;
-      hint.className = 'status bad';
-      hint.style.display = '';
-    }
+  if (logWrap) {
+    logWrap.style.display = view.log.visible ? '' : 'none';
+    logWrap.open = view.log.expanded;
   }
 
-  // After every image-state change, refresh the engine status so the Start
-  // engine button's enabled-ness stays in sync.
+  // Error hint — only revealed when describeImageStatus surfaced one.
+  const hint = $('image-hint');
+  if (view.errorHint) {
+    hint.textContent = view.errorHint;
+    hint.className = 'status bad';
+    hint.style.display = '';
+  } else {
+    hint.textContent = '';
+    hint.className = 'status';
+    hint.style.display = 'none';
+  }
+
+  // Continue / stop the 1s poll while a build is in flight.
+  if (view.pollAgain) {
+    if (!imagePoll) imagePoll = setInterval(refreshImageStatus, 1000);
+  } else if (imagePoll) {
+    clearInterval(imagePoll); imagePoll = null;
+  }
+
+  // After every image-state change, refresh the engine status so the
+  // Start-engine button's enabled-ness stays in sync.
   refreshEngineStatus();
 }
 
