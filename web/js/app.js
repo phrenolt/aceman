@@ -23,6 +23,7 @@ import { inBrowserSupported as inBrowserSupportedPure } from './lib/feature_dete
 import { extractExistingName } from './lib/api_errors.js';
 import { describeImageStatus } from './lib/image_status.js';
 import { buildPlaybackOptions } from './lib/playback_options.js';
+import { decidePlaybackPath } from './lib/playback_decision.js';
 
 const $ = id => document.getElementById(id);
 
@@ -607,28 +608,32 @@ async function play(opts = {}) {
   }
   loadFavs();
 
-  // Two playback paths, chosen by the user's stored preference:
-  //   "external" → OS scheme handler routes acestream://CID to the host
-  //                aceman shell, which spawns vlc/mpv.
-  //   "browser"  → mpegts.js + same-origin /api/stream/proxy/CID; bytes
-  //                stay inside this page.
-  if (cfg.playback_mode === 'browser') {
-    // Single-engine-session invariant: kill any host-side wrapper
-    // (and any in-page proxy in this tab) before opening a new one,
-    // regardless of which browser destination we're handing to next.
+  // Pure decision — see ./lib/playback_decision.js for the matrix
+  // (playback_mode × default_browser × inBrowserSupported). Every
+  // side effect below is gated by `path.kind`.
+  const path = decidePlaybackPath(cfg, {
+    inBrowserSupported: inBrowserSupported(),
+  });
+
+  // Browser-mode paths share a player-stop preflight so we never
+  // race a previous wrapper. External mode does its own teardown
+  // below since it tears down BOTH the in-page player AND the
+  // host wrapper before dispatching the scheme handler.
+  if (path.kind !== 'external-scheme') {
     try { await api('/api/player/stop', { method: 'POST', body: '{}' }); }
     catch (_) { /* best-effort */ }
+  }
 
-    // Specific-browser target → open a new window in that browser
-    // with ?play=<cid>; its own JS will pick up the cid and start
-    // in-page playback. We don't open anything in *this* tab.
-    if (cfg.default_browser) {
-      const label = `${_browserLabel(cfg.default_browser)}` +
-                    (cfg.default_browser_source ? ` (${cfg.default_browser_source})` : '');
+  switch (path.kind) {
+    case 'open-in-other-browser': {
+      // Specific-browser target → open a new window there with
+      // ?play=<cid>; its own JS picks up the cid and starts
+      // in-page playback. We don't open anything in *this* tab.
       if (!confirm(
-          `Open the stream in ${label} and close this tab?\n\n` +
-          `A new window will open in ${label}. This tab will then close ` +
-          `automatically so you don't end up with two players running.`)) {
+          `Open the stream in ${path.label} and close this tab?\n\n` +
+          `A new window will open in ${path.label}. This tab will then ` +
+          `close automatically so you don't end up with two players ` +
+          `running.`)) {
         return;
       }
       stopInBrowserPlayback();   // free this tab so we don't double-stream
@@ -642,49 +647,46 @@ async function play(opts = {}) {
         refreshPlaybackMoveButton();
         return;
       }
-      // Try to close ourselves. window.close() only works on tabs
-      // script opened; on user-opened tabs it's a no-op. Either way,
-      // replace the page contents so the user has something obvious
-      // to look at if the close gets blocked.
-      _closeThisTab(label);
+      _closeThisTab(path.label);
       return;
     }
 
-    if (!inBrowserSupported()) {
-      showError('In-browser playback unavailable (mpegts.js / MSE not ' +
-                'supported). Falling back to external player.');
-      livePlaybackTarget = encodeTarget('external', cfg.default_player, cfg.default_player_source);
+    case 'in-tab-unsupported-fallback': {
+      showError(path.warning);
+      livePlaybackTarget = path.target;
       window.location.href = 'acestream://' + cid;
       return;
     }
-    // Order matters: startInBrowserPlayback calls stopInBrowserPlayback
-    // first to tear down any prior player, and that helper clears
-    // livePlaybackTarget when it sees it set to 'browser'. So we set
-    // the live target AFTER the start call, not before — otherwise we'd
-    // immediately blow away the value and the Move button would think
-    // nothing is playing.
-    startInBrowserPlayback(cid);
-    livePlaybackTarget = 'browser';
-    refreshPlaybackMoveButton();
-  } else {
-    // External player. Tear down BOTH possible previous players:
-    //   (a) an in-browser proxy in this tab, and
-    //   (b) any host-side VLC/mpv held by an earlier wrapper.
-    // The shell wrapper's acquire_active_session would do (b) on its
-    // own once the new acestream:// click spawns it, but driving the
-    // teardown from here keeps the "one Play = one player" guarantee
-    // uniform across browser↔external switches and gives a clean
-    // handover (no overlapping windows during the wrapper swap).
-    if (mpegtsPlayer) stopInBrowserPlayback();
-    try { await api('/api/player/stop', { method: 'POST', body: '{}' }); }
-    catch (_) { /* best-effort */ }
-    livePlaybackTarget = encodeTarget('external', cfg.default_player, cfg.default_player_source);
-    refreshPlaybackMoveButton();
-    // The desktop entry installed for this app claims
-    // x-scheme-handler/acestream and routes the URL to the host
-    // `aceman` shell. The page stays put — browsers don't navigate
-    // when the target scheme has a handler.
-    window.location.href = 'acestream://' + cid;
+
+    case 'in-tab': {
+      // Order matters: startInBrowserPlayback calls
+      // stopInBrowserPlayback first to tear down any prior player,
+      // and that helper clears livePlaybackTarget when it sees it
+      // set to 'browser'. So we set the live target AFTER the start
+      // call — otherwise we'd immediately blow away the value and
+      // the Move button would think nothing is playing.
+      startInBrowserPlayback(cid);
+      livePlaybackTarget = 'browser';
+      refreshPlaybackMoveButton();
+      return;
+    }
+
+    case 'external-scheme': {
+      // External player. Tear down BOTH possible previous players:
+      //   (a) an in-browser proxy in this tab, and
+      //   (b) any host-side VLC/mpv held by an earlier wrapper.
+      if (mpegtsPlayer) stopInBrowserPlayback();
+      try { await api('/api/player/stop', { method: 'POST', body: '{}' }); }
+      catch (_) { /* best-effort */ }
+      livePlaybackTarget = path.target;
+      refreshPlaybackMoveButton();
+      // The desktop entry installed for this app claims
+      // x-scheme-handler/acestream and routes the URL to the host
+      // aceman shell. The page stays put — browsers don't navigate
+      // when the target scheme has a handler.
+      window.location.href = 'acestream://' + cid;
+      return;
+    }
   }
 }
 
