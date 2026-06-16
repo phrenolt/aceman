@@ -27,6 +27,7 @@ import { decidePlaybackPath } from './lib/playback_decision.js';
 import { findFavByCid } from './lib/fav_lookup.js';
 import { targetValueToConfig } from './lib/playback_config.js';
 import { formatResetReport } from './lib/factory_reset_report.js';
+import { describeDesktopStatus } from './lib/desktop_status.js';
 
 const $ = id => document.getElementById(id);
 
@@ -1428,32 +1429,25 @@ async function runFactoryReset() {
 }
 
 async function refreshDesktopEntry() {
-  let s;
-  try {
-    s = await api('/api/desktop-entry/app');
-  } catch (e) {
-    $('desktop-status').textContent = 'unavailable';
-    $('desktop-status').className = 'status bad';
-    $('desktop-toggle').disabled = true;
-    return;
-  }
+  let s = null;
+  try { s = await api('/api/desktop-entry/app'); }
+  catch (_) { /* leave s = null; describeDesktopStatus collapses to 'unavailable' */ }
+
+  const view = describeDesktopStatus(s);
+  $('desktop-status').textContent = view.status;
+  $('desktop-status').className = view.statusClass;
+
+  // Path is broker-supplied and only meaningful when the fetch
+  // succeeded. Tooltip on the .has-tooltip label surfaces the
+  // exact filesystem location for the user.
+  $('desktop-path').textContent = view.path;
+  if (view.path) $('desktop-label').title = view.path;
+
   const btn = $('desktop-toggle');
-  btn.disabled = false;
-  $('desktop-path').textContent = s.path;
-  if (s.path) $('desktop-label').title = s.path;
-  if (s.installed) {
-    $('desktop-status').textContent = 'installed';
-    $('desktop-status').className = 'status ok';
-    btn.textContent = 'Uninstall';
-    btn.dataset.action = 'uninstall';
-    btn.className = 'danger-outline';
-  } else {
-    $('desktop-status').textContent = 'not installed';
-    $('desktop-status').className = 'status';
-    btn.textContent = 'Install';
-    btn.dataset.action = 'install';
-    btn.className = 'primary';
-  }
+  btn.textContent = view.button.text;
+  btn.dataset.action = view.button.action;
+  btn.className = view.button.className;
+  btn.disabled = view.button.disabled;
 }
 
 // Returns one of: 'with-scheme', 'only', null (cancel). Uses a tiny
