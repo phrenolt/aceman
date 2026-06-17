@@ -153,10 +153,17 @@ def _strip_module_syntax(src: str) -> str:
 
 def _bundle_js() -> str:
     lib_dir = _HERE / "js" / "lib"
-    lib_files = sorted(lib_dir.glob("*.js")) if lib_dir.exists() else []
+    # rglob (not glob) so the bundler picks up the grouped
+    # subdirectories under lib/ — playback/, favourites/, engine/,
+    # cards/. Top-level lib/*.js still resolve naturally.
+    lib_files = sorted(lib_dir.rglob("*.js")) if lib_dir.exists() else []
     parts = []
     for p in lib_files:
-        parts.append(f"// ---- {p.name} ----")
+        # Show the relative path in the section header so a stack
+        # trace pointing at "lib/playback/playback_target.js" lines
+        # up with what the developer sees in their editor.
+        rel = p.relative_to(lib_dir)
+        parts.append(f"// ---- {rel} ----")
         parts.append(_strip_module_syntax(p.read_text(encoding="utf-8")))
     parts.append("// ---- app.js ----")
     parts.append(_strip_module_syntax(
