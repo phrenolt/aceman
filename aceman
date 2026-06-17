@@ -13,6 +13,13 @@
 #                                        # acestream://<id>, or a saved fav name
 #   aceman --url <transport_url>       # play a transport URL (.acelive, ...)
 #   aceman --infohash <infohash>       # play a 40-hex BT infohash
+#   aceman --wsl <aceid>               # WSL-only: print the engine playback
+#                                        # URL with authority rewritten to
+#                                        # the WSL guest IP (from
+#                                        # `hostname -I`) so Windows VLC can
+#                                        # open it. Starts the engine if
+#                                        # needed, but does NOT launch a
+#                                        # player or take the wrapper lock.
 #
 #   aceman fav list                    # list saved favourites
 #   aceman fav rm <name>               # delete a favourite (alias: delete)
@@ -576,6 +583,10 @@ engine_authority="${ENGINE#http://}"
 # something already in the favourites file.
 CID=""
 FROM_FAV=0
+# --wsl mode short-circuits the player launch and prints a URL whose
+# authority is rewritten to the WSL guest IP. Set in the case dispatch
+# below; consumed in the engine-request path.
+WSL_MODE=0
 
 # Refuse control bytes in any positional arg. They have no legitimate
 # place in a cid, a URL, a favourite name, or a subcommand argument.
@@ -613,6 +624,25 @@ case "${1:-}" in
         [ $# -ge 2 ] || die "missing infohash after --infohash"
         [[ "$2" =~ ^[A-Fa-f0-9]{40}$ ]] || die "infohash must be 40 hex chars"
         param="infohash=$2" ;;
+    --wsl)
+        [ $# -ge 2 ] || die "missing aceid after --wsl"
+        # Refuse outside WSL. The whole point is to rewrite the URL with
+        # the WSL guest IP — anywhere else, just use the engine URL.
+        if ! grep -qiE "microsoft|wsl" /proc/sys/kernel/osrelease 2>/dev/null; then
+            die "--wsl mode only works inside WSL"
+        fi
+        # Accept either a bare 40-hex cid or acestream://<40hex>.
+        _wsl_id="$2"
+        case "$_wsl_id" in
+            acestream://*) _wsl_id="${_wsl_id#acestream://}"; _wsl_id="${_wsl_id%/}" ;;
+        esac
+        [[ "$_wsl_id" =~ ^[A-Fa-f0-9]{40}$ ]] \
+            || die "--wsl: aceid must be a 40-hex content id (or acestream://<id>)"
+        [ $# -eq 2 ] || die "extra arguments after --wsl <aceid>"
+        CID="$_wsl_id"
+        WSL_MODE=1
+        param="id=$CID"
+        unset _wsl_id ;;
     --*)
         die "unknown option: $1
 try: aceman --help" ;;
@@ -660,9 +690,12 @@ try: aceman --help" ;;
 esac
 
 # Player resolution only matters on play paths (fav/engine subcommands
-# exited above). Doing it here avoids erroring out "no player installed"
-# when the user is only running `aceman engine status`.
-resolve_player "$PLAYER" "$PLAYER_SOURCE"
+# exited above; --wsl mode prints a URL for an external Windows player
+# and doesn't launch anything here). Skipping the call also avoids
+# "no player installed" failing the WSL flow on a headless WSL distro.
+if [ "$WSL_MODE" -eq 0 ]; then
+    resolve_player "$PLAYER" "$PLAYER_SOURCE"
+fi
 
 # Probe the engine. If it's already up, use it as-is. If not, start it
 # ourselves via run-container.sh — same helper engine_cmd_start uses, so
@@ -677,7 +710,11 @@ fi
 # Stop any previous aceman (and its player + engine session) before we
 # ask the engine for a fresh session — keeps "one stream at a time" as
 # the invariant and avoids the engine briefly serving two parallel sessions.
-acquire_active_session
+# Skip in --wsl mode: the "player" is on Windows, we don't own a wrapper
+# slot and shouldn't tear down whatever's actively playing here.
+if [ "$WSL_MODE" -eq 0 ]; then
+    acquire_active_session
+fi
 
 # Ask for the stream. format=json gives us a structured response with the
 # command_url we need to stop the session cleanly later. Cap the response
@@ -721,6 +758,29 @@ force_engine() {
 
 playback_url="$(force_engine "$playback_url")"
 [ -n "$command_url" ] && command_url="$(force_engine "$command_url")"
+
+# --wsl mode: rewrite the authority to the WSL guest IP so Windows VLC
+# can reach the engine across the WSL2 NAT, then print the URL to
+# stdout and exit. The engine container itself was started normally,
+# so the session keeps running for the Windows player to consume; the
+# engine times the session out on its own when the player goes away.
+# We deliberately don't print command_url — exposing the stop URL on
+# stdout would tempt callers to script teardown from outside the
+# session ownership model.
+if [ "$WSL_MODE" -eq 1 ]; then
+    wsl_ip="$(hostname -I 2>/dev/null | awk '{print $1; exit}')"
+    [ -n "$wsl_ip" ] || die "could not resolve WSL guest IP (hostname -I empty)"
+    # Engine port from the configured authority (host:port).
+    port="${engine_authority##*:}"
+    wsl_authority="${wsl_ip}:${port}"
+    output_url="${playback_url/$engine_authority/$wsl_authority}"
+    # Sanity: replacement should have changed exactly the authority.
+    # If the URL didn't contain the engine authority, something is off
+    # — refuse to print a URL that wouldn't actually be reachable.
+    [ "$output_url" != "$playback_url" ] || die "internal: failed to rewrite authority"
+    printf '%s\n' "$output_url"
+    exit 0
+fi
 
 # After the player exits, offer to save the content id as a named favourite.
 # Skipped when nothing to save, when stdin isn't a TTY (cron/launcher/pipe),
