@@ -3,45 +3,41 @@
 // THIS file is the wiring between the DOM, the broker, and those
 // helpers — there's nothing here a JS test should be poking at
 // directly. Add new pure logic to a lib module first.
-import { parseId } from './lib/cid.js';
-import { uniqueFavName } from './lib/favnames.js';
-import { createBrowserFavs } from './lib/browser_favs.js';
-import { daysSinceLabel } from './lib/format.js';
-import { EngineStatusState } from './lib/engine_state.js';
+import { parseId } from './lib/playback/content_id_parser.js';
+import { uniqueFavouriteName } from './lib/favourites/favourite_names.js';
+import { createBrowserFavouritesStore } from './lib/favourites/browser_favourites_store.js';
+import { daysSinceLabel } from './lib/favourites/last_watched_label.js';
+import { EngineStatusState } from './lib/engine/engine_state.js';
 import { createApi } from './lib/api.js';
-import { encodeTarget, isExternal } from './lib/playback_target.js';
-import { KEYS, migrateLegacy } from './lib/storage_keys.js';
+import { encodeTarget, isExternal } from './lib/playback/playback_target.js';
+import { KEYS } from './lib/storage_keys.js';
 import { runModal } from './lib/modal.js';
 import { debounce } from './lib/debounce.js';
 import { paginate } from './lib/pagination.js';
 import { shouldSearch, normaliseQuery, buildSearchUrl } from './lib/search_query.js';
-import { saveLastPlay, loadLastPlay, clearLastPlay } from './lib/last_play.js';
+import { saveLastPlay, loadLastPlay, clearLastPlay } from './lib/playback/last_played_stream.js';
 import { browserLabel, detectCurrentBrowser as detectCurrentBrowserPure }
   from './lib/browsers.js';
-import { extractPlayCid } from './lib/page_query.js';
-import { inBrowserSupported as inBrowserSupportedPure } from './lib/feature_detect.js';
+import { extractPlayCidFromUrl } from './lib/playback/play_query_param.js';
+import { inBrowserSupported as inBrowserSupportedPure } from './lib/playback/playback_feature_detect.js';
 import { extractExistingName } from './lib/api_errors.js';
-import { describeImageStatus } from './lib/image_status.js';
-import { buildPlaybackOptions } from './lib/playback_options.js';
-import { decidePlaybackPath } from './lib/playback_decision.js';
-import { findFavByCid } from './lib/fav_lookup.js';
-import { targetValueToConfig } from './lib/playback_config.js';
+import { describeContainerImageStatus } from './lib/cards/container_image_status.js';
+import { buildPlaybackOptions } from './lib/playback/playback_options.js';
+import { decidePlaybackPath } from './lib/playback/playback_decision.js';
+import { findFavouriteByCid } from './lib/favourites/favourite_lookup.js';
+import { targetValueToConfig } from './lib/playback/playback_config.js';
 import { formatResetReport } from './lib/factory_reset_report.js';
-import { describeDesktopStatus } from './lib/desktop_status.js';
-import { describePlayButton } from './lib/play_button.js';
-import { describeMoveButton } from './lib/move_button.js';
-import { describeEngineToggle } from './lib/engine_toggle.js';
-import { describeSaveButton } from './lib/save_button.js';
-import { describeStorageBadge } from './lib/storage_badge.js';
-import { resolveDisplayName } from './lib/display_name.js';
-import { describePlayGate } from './lib/play_gate.js';
+import { describeDesktopShortcutStatus } from './lib/cards/desktop_shortcut_status.js';
+import { describePlayButton } from './lib/playback/play_stop_button.js';
+import { describeMoveButton } from './lib/playback/move_stream_button.js';
+import { describeEngineToggle } from './lib/engine/engine_start_stop_toggle.js';
+import { describeSaveButton } from './lib/favourites/save_favourite_button.js';
+import { describeFavouritesStorageBadge } from './lib/favourites/favourites_storage_badge.js';
+import { resolveDisplayName } from './lib/favourites/playback_display_name.js';
+import { describePlayButtonGate } from './lib/engine/play_button_gate.js';
 
 const $ = id => document.getElementById(id);
 
-// One-shot migration of localStorage keys from the project's old
-// `acewatch.*` namespace to the current `aceman.*`. See
-// ./lib/storage_keys.js — idempotent, unit-tested.
-migrateLegacy(localStorage);
 let mode = 'browser';   // 'sqlite' or 'browser', set by /api/storage-mode
 // Tracks just enough about the last Play to drive the Save button: we no
 // longer own the session (the host shell does via acestream:// dispatch),
@@ -65,7 +61,7 @@ const api = createApi();
 
 // Browser-side favourites store (used when the server has no sqlite3).
 // Implementation lives in ./lib/browser_favs.js and is unit-tested.
-const browserFavs = createBrowserFavs();
+const browserFavs = createBrowserFavouritesStore();
 
 // In-memory cached list + filter/page state. allFavs is the full set from
 // whichever store; the renderer slices it by search and page.
@@ -313,7 +309,7 @@ function renderSearchRow(r) {
   // from the start — disabled, with the existing favourite name surfaced
   // if it doesn't match what we'd have called it. Saves a click + alert
   // round-trip and tells the user where to look in their favourites list.
-  const existing = findFavByCid(allFavs, r.cid);
+  const existing = findFavouriteByCid(allFavs, r.cid);
   saveBtn.classList.add('icon-btn');
   if (existing) {
     markSearchRowSaved(saveBtn, existing.name, primary);
@@ -342,7 +338,7 @@ function markSearchRowSaved(btn, favName, rowPrimary) {
   btn.onclick = null;
 }
 
-// Names of every saved favourite — used by uniqueFavName when seeding
+// Names of every saved favourite — used by uniqueFavouriteName when seeding
 // a candidate label so the suggestion doesn't collide.
 const takenFavNames = () => allFavs.map(f => f.name);
 
@@ -353,14 +349,14 @@ async function instaSave(r, btn, rowPrimary) {
   // Normally the button would already be in its "saved" state in this
   // case (set by renderSearchRow), but the cache could be stale if
   // another tab raced us.
-  const existing = findFavByCid(allFavs, r.cid);
+  const existing = findFavouriteByCid(allFavs, r.cid);
   if (existing) {
     markSearchRowSaved(btn, existing.name, rowPrimary);
     return;
   }
   const taken = takenFavNames();
-  const english = uniqueFavName(r.translated_name, taken);
-  const originalLabel = uniqueFavName(r.name, taken);
+  const english = uniqueFavouriteName(r.translated_name, taken);
+  const originalLabel = uniqueFavouriteName(r.name, taken);
   const name = await showFavNameModal(english || '', originalLabel || '');
   if (!name) return;
   btn.disabled = true;
@@ -865,7 +861,7 @@ async function saveFav() {
   // Skip the name prompt if this cid is already saved — the user is much
   // more likely re-clicking the button by accident than wanting a second
   // entry under a new name.
-  const existing = findFavByCid(allFavs, current.cid);
+  const existing = findFavouriteByCid(allFavs, current.cid);
   if (existing) {
     alert(`This stream is already in your favourites as “${existing.name}”.`);
     return;
@@ -970,7 +966,7 @@ async function refreshEngineStatus() {
 // poll so other code paths (e.g. just-started engine) can re-evaluate
 // immediately without waiting for the next tick.
 function refreshPlayGate() {
-  const view = describePlayGate(engineState.last);
+  const view = describePlayButtonGate(engineState.last);
   const btn = $('play-btn');
   const hint = $('play-hint');
   btn.disabled = view.disabled;
@@ -1248,9 +1244,9 @@ let imagePoll = null;
 async function refreshImageStatus() {
   let s = null;
   try { s = await api('/api/engine/image'); }
-  catch (_) { /* leave s = null; describeImageStatus collapses to 'unavailable' */ }
+  catch (_) { /* leave s = null; describeContainerImageStatus collapses to 'unavailable' */ }
 
-  const view = describeImageStatus(s);
+  const view = describeContainerImageStatus(s);
 
   // Top-line status badge + registry tag (the tag is broker-supplied
   // and only present in a successful fetch).
@@ -1277,7 +1273,7 @@ async function refreshImageStatus() {
     logWrap.open = view.log.expanded;
   }
 
-  // Error hint — only revealed when describeImageStatus surfaced one.
+  // Error hint — only revealed when describeContainerImageStatus surfaced one.
   const hint = $('image-hint');
   if (view.errorHint) {
     hint.textContent = view.errorHint;
@@ -1360,9 +1356,9 @@ async function runFactoryReset() {
 async function refreshDesktopEntry() {
   let s = null;
   try { s = await api('/api/desktop-entry/app'); }
-  catch (_) { /* leave s = null; describeDesktopStatus collapses to 'unavailable' */ }
+  catch (_) { /* leave s = null; describeDesktopShortcutStatus collapses to 'unavailable' */ }
 
-  const view = describeDesktopStatus(s);
+  const view = describeDesktopShortcutStatus(s);
   $('desktop-status').textContent = view.status;
   $('desktop-status').className = view.statusClass;
 
@@ -1548,7 +1544,7 @@ async function toggleDesktopEntry() {
         searchLabel.title = '';
       }
     }
-    const badge = describeStorageBadge(mode, cfg.favorites_path);
+    const badge = describeFavouritesStorageBadge(mode, cfg.favorites_path);
     $('storage-badge').textContent = badge.text;
     $('storage-badge').title = badge.title;
   } catch (e) {
@@ -1838,7 +1834,7 @@ async function toggleDesktopEntry() {
   // list has settled (so the now-playing card can show the saved name
   // if the cid is in favourites), then strip the query so a reload
   // doesn't auto-play again.
-  const _playCid = extractPlayCid(window.location.search);
+  const _playCid = extractPlayCidFromUrl(window.location.search);
   if (_playCid) {
     history.replaceState(null, '', window.location.pathname);
     $('cid-input').value = _playCid;
