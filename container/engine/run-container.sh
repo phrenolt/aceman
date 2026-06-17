@@ -10,6 +10,12 @@
 #                    forwarded to container    Engine inside *always* binds
 #                    port 6878                 6878 — not configurable via
 #                                               any engine flag (verified).
+#   ACE_API_HOST     bind address for the      (default 127.0.0.1, EXCEPT under
+#                    host-side port            WSL where we default to 0.0.0.0
+#                                               so Windows VLC can reach the
+#                                               engine via the WSL guest IP).
+#                                               Override with 127.0.0.1 to
+#                                               force loopback-only even on WSL.
 #
 # The engine's P2P swarm port (8621 TCP+UDP) is also hardcoded and is
 # deliberately *not* published — the swarm sees only outbound connections
@@ -35,10 +41,37 @@ API_PORT="${ACE_API_PORT:-${ACE_PORT:-6878}}"
 MEMORY="${ACE_MEMORY:-5g}"
 CACHE_SIZE="${ACE_CACHE_SIZE:-3g}"
 
+# Bind-host default: loopback everywhere except WSL.
+#
+# Under WSL, the engine has to be reachable on the WSL guest IP so a
+# Windows-side player (VLC over the URL printed by `aceman --wsl`) can
+# connect. 127.0.0.1 inside WSL2 isn't routable from Windows, so the
+# default flips to 0.0.0.0 there. The override is still available
+# (ACE_API_HOST=127.0.0.1) for operators who want loopback only.
+#
+# Outside WSL the default stays 127.0.0.1 — keeping the engine
+# unreachable from any external interface is the project's whole
+# threat-model premise; we never widen by accident.
+_default_bind="127.0.0.1"
+if grep -qiE "microsoft|wsl" /proc/sys/kernel/osrelease 2>/dev/null; then
+    _default_bind="0.0.0.0"
+fi
+API_HOST="${ACE_API_HOST:-$_default_bind}"
+unset _default_bind
+
 # Validate the port-ish int so a typo doesn't reach podman as a confusing
 # message three layers down.
 case "$API_PORT" in
     ''|*[!0-9]*) echo "run-container.sh: ACE_API_PORT must be an integer: $API_PORT" >&2; exit 1 ;;
+esac
+
+# Validate the bind-host as either 0.0.0.0 or a single IPv4. Reject
+# arbitrary hostnames so a stray DNS entry can't quietly point at a
+# different interface than the operator expected.
+case "$API_HOST" in
+    0.0.0.0|127.0.0.1|::1) ;;
+    [0-9]*\.[0-9]*\.[0-9]*\.[0-9]*) ;;
+    *) echo "run-container.sh: ACE_API_HOST must be an IPv4 (or ::1), got: $API_HOST" >&2; exit 1 ;;
 esac
 
 # Convert a podman-style size ("3g" / "512m" / "1024k" / bare bytes) to
@@ -76,7 +109,7 @@ detach_flag=()
 # --disable-sentry), so we only specify the additions here.
 exec podman run --rm "${detach_flag[@]}" \
     --name "$NAME" \
-    -p "127.0.0.1:${API_PORT}:6878" \
+    -p "${API_HOST}:${API_PORT}:6878" \
     --cap-drop=ALL \
     --security-opt no-new-privileges \
     --read-only \
