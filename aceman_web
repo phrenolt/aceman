@@ -16,6 +16,14 @@
 #                   detected. Same as ACE_DISABLE_WSL=1. WSL mode is
 #                   otherwise auto-enabled if the kernel string says
 #                   we're inside WSL — see below.
+#   --commit <sha> — pin the engine + web container images to a
+#                   specific git commit. Defaults to HEAD. The wrapper
+#                   uses `git archive` to extract that commit's tree
+#                   into a temp build context, splices in the current
+#                   dist/engine.tar.gz (not in git), and builds. Images
+#                   are labelled with the sha so subsequent launches
+#                   reuse them as long as the label matches.
+#                   Also honored via ACE_COMMIT=<sha>.
 #
 # WSL behaviour: when /proc/sys/kernel/osrelease says we're inside WSL,
 # the wrapper automatically serves to a Windows-side browser:
@@ -135,7 +143,8 @@ trap '
 ' EXIT
 
 # Resolve the container-vs-native mode VERY early so we can skip the
-# web-image build on `--native`. Only --native / ACE_WEB_NATIVE=1
+# web-image build on `--native`. Only --native / ACE_WEB_NATIVE=1 and
+# --commit (which influences which sha the image will be built from)
 # matter at this point; the rest of argv (host/port/open-browser) is
 # parsed further down.
 if [ "${ACE_WEB_NATIVE:-0}" = 1 ]; then
@@ -143,12 +152,19 @@ if [ "${ACE_WEB_NATIVE:-0}" = 1 ]; then
 else
     WEB_USE_CONTAINER=1
 fi
+_take_commit=0
 for _arg in "$@"; do
+    if [ "$_take_commit" = 1 ]; then
+        export ACE_COMMIT="$_arg"
+        _take_commit=0
+        continue
+    fi
     case "$_arg" in
         --native) WEB_USE_CONTAINER=0 ;;
+        --commit) _take_commit=1 ;;
     esac
 done
-unset _arg
+unset _arg _take_commit
 
 # Shared helpers — image builds, network ensure/attach, WSL detection,
 # validators. One file so the two wrappers can't drift apart on
@@ -259,7 +275,7 @@ fi
 _web_argv=()
 _open_browser=0
 _have_host=0
-_expect=""           # "host" / "port" when next token is a value
+_expect=""           # "host" / "port" / "commit" when next token is a value
 for _arg in "$@"; do
     if [ -n "$_expect" ]; then
         case "$_expect" in
@@ -276,6 +292,12 @@ for _arg in "$@"; do
                 export ACE_WEB_PORT="$_arg"
                 _web_argv+=(--port "$_arg")
                 ;;
+            commit)
+                # Already exported during the pre-pass that gated the
+                # image builds — re-export here so the swallow stays
+                # idempotent.
+                export ACE_COMMIT="$_arg"
+                ;;
         esac
         _expect=""
         continue
@@ -284,6 +306,7 @@ for _arg in "$@"; do
         --container) ;;       # removed flag; ignored for back-compat
         --native)    ;;       # already consumed via WEB_USE_CONTAINER
         --disable-wsl) WEB_USE_WSL=0 ;;
+        --commit)    _expect="commit" ;;
         --host)      _expect="host" ;;
         --port)      _expect="port" ;;
         --open-browser)
