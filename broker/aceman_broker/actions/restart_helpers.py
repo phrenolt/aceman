@@ -94,6 +94,23 @@ def recreate_container(name: str, *, stop_timeout: int = 5,
         raise RuntimeError(
             f"no CreateCommand recorded for {name!r}; can't replay")
 
+    # Force detach on the replay so subprocess.run doesn't block waiting
+    # on a foreground container. The broker is single-threaded per
+    # action, and a non-detached `podman run` would hold this thread
+    # for the lifetime of the container, deadlocking every subsequent
+    # request. Inject `-d` after the `run` verb if neither `-d` nor
+    # `--detach` is already present.
+    if "-d" not in create_cmd and "--detach" not in create_cmd:
+        try:
+            run_idx = create_cmd.index("run")
+            create_cmd = (create_cmd[:run_idx + 1]
+                          + ["-d"]
+                          + create_cmd[run_idx + 1:])
+        except ValueError:
+            # No `run` verb in the recorded command — unusual but not
+            # actionable here; fall through and let podman complain.
+            pass
+
     _log("restart", "%s: recreating from CreateCommand (%d argv)",
          name, len(create_cmd))
 
