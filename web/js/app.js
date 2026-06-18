@@ -60,6 +60,44 @@ function showError(msg) {
   el.textContent = msg || '';
 }
 
+// Themed replacement for the browser-native confirm() dialog. Same
+// boolean return shape (Promise<bool>) so callers stay simple:
+//   if (!(await showConfirm({ title, message }))) return;
+// Native confirm() paints in the OS's own colours (blue accents on
+// most platforms), which broke our mustard palette every time it
+// fired. The custom modal lives in #confirm-modal in index.html and
+// shares CSS with reset-modal / restart-modal / install-modal.
+function showConfirm({ title, message, confirmText = 'Confirm', danger = false } = {}) {
+  return new Promise((resolve) => {
+    const modal = $('confirm-modal');
+    const go = $('confirm-go');
+    const cancel = $('confirm-cancel');
+    if (!modal || !go || !cancel) { resolve(false); return; }
+    $('confirm-title').textContent = title || 'Confirm';
+    $('confirm-message').textContent = message || '';
+    go.textContent = confirmText;
+    // danger=true swaps the primary mustard button for the dark-red
+    // danger button so destructive confirms (Uninstall, Quit, Delete
+    // favourite) read as such at a glance.
+    go.className = danger ? 'danger' : 'primary';
+    modal.style.display = 'flex';
+    const onKey = (e) => { if (e.key === 'Escape') done(false); };
+    function done(v) {
+      modal.style.display = 'none';
+      go.onclick = null;
+      cancel.onclick = null;
+      document.removeEventListener('keydown', onKey);
+      resolve(v);
+    }
+    go.onclick = () => done(true);
+    cancel.onclick = () => done(false);
+    document.addEventListener('keydown', onKey);
+    // Focus the Cancel button by default so an accidental Enter
+    // doesn't fire a destructive action.
+    setTimeout(() => cancel.focus(), 0);
+  });
+}
+
 // JSON fetch wrapper — see ./lib/api.js. Tests inject a fake fetch
 // via createApi(fakeFetch); the production singleton uses globalThis.fetch.
 const api = createApi();
@@ -202,7 +240,12 @@ async function renameFav(oldName, newName) {
 }
 
 async function deleteFav(name) {
-  if (!confirm(`Delete favourite "${name}"?`)) return;
+  if (!(await showConfirm({
+    title: 'Delete favourite',
+    message: `Delete favourite "${name}"?`,
+    confirmText: 'Delete',
+    danger: true,
+  }))) return;
   if (mode === 'sqlite') {
     await api('/api/favs/' + encodeURIComponent(name), { method: 'DELETE' });
   } else {
@@ -660,11 +703,13 @@ async function play(opts = {}) {
       // Specific-browser target → open a new window there with
       // ?play=<cid>; its own JS picks up the cid and starts
       // in-page playback. We don't open anything in *this* tab.
-      if (!confirm(
-          `Open the stream in ${path.label} and close this tab?\n\n` +
-          `A new window will open in ${path.label}. This tab will then ` +
-          `close automatically so you don't end up with two players ` +
-          `running.`)) {
+      if (!(await showConfirm({
+          title: `Open in ${path.label}`,
+          message: `Open the stream in ${path.label} and close this tab? `
+                 + `A new window will open in ${path.label}. This tab will then `
+                 + `close automatically so you don't end up with two players running.`,
+          confirmText: 'Open & close',
+      }))) {
         return;
       }
       stopInBrowserPlayback();   // free this tab so we don't double-stream
@@ -1402,7 +1447,12 @@ async function installImage() {
 }
 
 async function uninstallImage() {
-  if (!confirm('Remove the engine container image? Any running container is stopped first.')) return;
+  if (!(await showConfirm({
+    title: 'Uninstall engine image',
+    message: 'Remove the engine container image? Any running container is stopped first.',
+    confirmText: 'Uninstall',
+    danger: true,
+  }))) return;
   try {
     const r = await api('/api/engine/image', { method: 'DELETE' });
     if (r.removed === false) showError('image uninstall: ' + (r.error || 'failed'));
@@ -1775,7 +1825,12 @@ async function toggleDesktopEntry() {
   // (The idle-shutdown watcher is the cautious path — it never stops
   // the engine, because the user didn't ask.)
   $('server-shutdown').onclick = async () => {
-    if (!confirm('Shut down aceman and stop the engine container?')) return;
+    if (!(await showConfirm({
+      title: 'Quit aceman',
+      message: 'Shut down aceman and stop the engine container?',
+      confirmText: 'Quit',
+      danger: true,
+    }))) return;
     const btn = $('server-shutdown');
     btn.disabled = true;
     btn.textContent = 'Shutting down…';

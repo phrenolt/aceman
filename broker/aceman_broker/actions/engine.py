@@ -109,37 +109,45 @@ def action_engine_status(params: "dict | None" = None) -> dict:
     }
 
 
+def _start_engine_unlocked() -> dict:
+    """The body of action_engine_start without the _engine_lock acquire.
+    Lets action_engine_restart call into the spawn path while it
+    already holds the lock (Python locks aren't reentrant).
+    """
+    if container_running():
+        return {"started": False, "reason": "already running"}
+    _log("engine", "start: spawning '%s' via %s", NAME, RUN_SH)
+    env = os.environ.copy()
+    env["ACE_DETACH"] = "1"
+    env["ACE_NAME"] = NAME
+    env["ACE_IMAGE"] = IMAGE
+    try:
+        r = subprocess.run(
+            ["bash", str(RUN_SH)],
+            env=env, capture_output=True, text=True,
+            timeout=LAUNCHER_TIMEOUT,
+        )
+    except FileNotFoundError as e:
+        raise RuntimeError(f"bash not on PATH: {e}") from e
+    except subprocess.TimeoutExpired as e:
+        raise RuntimeError("launcher timed out") from e
+    if r.returncode != 0:
+        msg = _safe((r.stderr or r.stdout or "").strip())
+        raise RuntimeError(
+            f"launcher exited {r.returncode}: {msg or '<no output>'}")
+    deadline = time.monotonic() + START_WAIT_SECONDS
+    while time.monotonic() < deadline:
+        if engine_probe(timeout=2):
+            _log("engine", "start: ready")
+            return {"started": True}
+        time.sleep(1)
+    raise RuntimeError(
+        f"container started but engine never answered at {ENGINE_URL}")
+
+
 def action_engine_start(params: "dict | None" = None) -> dict:
     with _engine_lock:
-        if container_running():
-            return {"started": False, "reason": "already running"}
-        _log("engine", "start: spawning '%s' via %s", NAME, RUN_SH)
-        env = os.environ.copy()
-        env["ACE_DETACH"] = "1"
-        env["ACE_NAME"] = NAME
-        env["ACE_IMAGE"] = IMAGE
-        try:
-            r = subprocess.run(
-                ["bash", str(RUN_SH)],
-                env=env, capture_output=True, text=True,
-                timeout=LAUNCHER_TIMEOUT,
-            )
-        except FileNotFoundError as e:
-            raise RuntimeError(f"bash not on PATH: {e}") from e
-        except subprocess.TimeoutExpired as e:
-            raise RuntimeError("launcher timed out") from e
-        if r.returncode != 0:
-            msg = _safe((r.stderr or r.stdout or "").strip())
-            raise RuntimeError(
-                f"launcher exited {r.returncode}: {msg or '<no output>'}")
-        deadline = time.monotonic() + START_WAIT_SECONDS
-        while time.monotonic() < deadline:
-            if engine_probe(timeout=2):
-                _log("engine", "start: ready")
-                return {"started": True}
-            time.sleep(1)
-        raise RuntimeError(
-            f"container started but engine never answered at {ENGINE_URL}")
+        return _start_engine_unlocked()
 
 
 def action_engine_stop(params: "dict | None" = None) -> dict:
@@ -159,14 +167,30 @@ def action_engine_stop(params: "dict | None" = None) -> dict:
 
 def action_engine_restart(params: "dict | None" = None) -> dict:
     with _engine_lock:
-        if not container_running():
-            return {"restarted": False, "reason": "not running"}
         # `rebuild` is the explicit operator opt-in from the Restart
         # modal's tickbox. Default false keeps a routine restart cheap
-        # (plain `podman restart`); true asks the broker to run
-        # ensure_engine_image first and recreate the container if the
-        # image label actually moved past what we have.
+        # (plain `podman restart`) and bails early if the container
+        # isn't running. true means "set everything back to a known
+        # clean state": build/rebuild the image, and if the container
+        # was stopped or never created, START it instead of giving up.
+        # That's what the operator's "Rebuild images" intent expects —
+        # not "only bounce what's running".
         rebuild = bool((params or {}).get("rebuild", False))
+        if not container_running():
+            if not rebuild:
+                return {"restarted": False, "reason": "not running"}
+            # Rebuild path with no running container: ensure the image
+            # is current (build from tarball if missing), then start
+            # fresh. Falls back to "started" semantics — same wire
+            # response shape as a restart so the UI doesn't have to
+            # distinguish.
+            if rebuild:
+                pick_up_image_changes("engine", IMAGE)
+            r = _start_engine_unlocked()
+            return {"restarted": bool(r.get("started")),
+                    "rebuilt": True,
+                    "started_fresh": True,
+                    "reason": r.get("reason")}
         image_changed = (
             pick_up_image_changes("engine", IMAGE) if rebuild else False
         )
