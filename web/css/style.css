@@ -293,11 +293,13 @@
      favourites list. Each column is a flex stack with its own gap so both
      columns line up at the same top edge — relying on per-card margins
      leaves the second column visually offset. */
-  .main { display: grid; gap: 1rem; grid-template-columns: 1fr;
-          grid-template-areas: "right" "favs"; }
-  .right-col, .favs-col { display: flex; flex-direction: column; gap: 1rem;
-                          min-width: 0; }
-  .right-col .card, .favs-col .card { margin: 0; }
+  /* All major cards are direct children of .main so we can position
+     them with grid-template-areas. Source order = narrow-screen
+     order: top-row → search → playback → favourites → setup. The
+     wide-screen media query below promotes favourites to its own
+     left column spanning every row. */
+  .main { display: grid; gap: 1rem; grid-template-columns: 1fr; min-width: 0; }
+  .main > .card { margin: 0; min-width: 0; }
   /* Three-up row across the top of the right column: Engine / Playback /
      Play. Stacks on narrow viewports; goes side-by-side on wide ones.
      min-width: 0 inside lets a card's text wrap rather than blow out
@@ -381,12 +383,24 @@
        app.js when isWslMode is true. */
     .top-row.top-row-solo { grid-template-columns: 1fr; }
   }
-  .right-col { grid-area: right; }
-  .favs-col  { grid-area: favs; }
   @media (min-width: 1400px) {
     body { max-width: 1700px; }
+    /* Wide-screen layout: favourites get their own left column spanning
+       every row of the right side (top-row → search → play → setup),
+       and stick in view as the user scrolls through the longer
+       right-hand column. */
     .main { grid-template-columns: minmax(360px, 1fr) 2fr;
-            grid-template-areas: "favs right"; align-items: start; }
+            grid-template-areas:
+              "favs top-row"
+              "favs search"
+              "favs play"
+              "favs setup";
+            align-items: start; }
+    #top-row     { grid-area: top-row; }
+    #search-card { grid-area: search; }
+    #play-card   { grid-area: play; }
+    #favs-card   { grid-area: favs; position: sticky; top: 1rem; }
+    #setup-card  { grid-area: setup; }
   }
 
   /* Favourites row layout */
