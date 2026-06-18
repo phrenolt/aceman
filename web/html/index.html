@@ -46,6 +46,21 @@
   </div>
 </div>
 
+<!-- Generic confirmation modal. showConfirm({title, message, confirmText,
+     danger}) in app.js fills it in and resolves with the user's choice.
+     Replaces native browser confirm() dialogs (which paint in OS-native
+     colours we can't theme). -->
+<div id="confirm-modal" class="modal-backdrop" style="display:none" role="dialog" aria-modal="true">
+  <div class="modal-card">
+    <h3 id="confirm-title">Confirm</h3>
+    <p id="confirm-message"></p>
+    <div class="install-opt" style="display:flex; gap:.5rem; justify-content:flex-end">
+      <button id="confirm-cancel">Cancel</button>
+      <button id="confirm-go" class="primary">Confirm</button>
+    </div>
+  </div>
+</div>
+
 <div id="restart-modal" class="modal-backdrop" style="display:none" role="dialog" aria-modal="true">
   <div class="modal-card">
     <h3>Restart aceman</h3>
