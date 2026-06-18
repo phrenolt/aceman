@@ -387,6 +387,13 @@ engine_cmd_start() {
                 # README / `aceman engine start --help` for router
                 # forwarding guidance.
                 export ACE_P2P_PORT="$2"; shift 2 ;;
+            --commit)
+                # Pin the engine image build to a specific git
+                # commit. ensure_engine_image uses git archive +
+                # the current dist/engine.tar.gz to build at that
+                # tree. Defaults to HEAD when unset.
+                [ $# -ge 2 ] || die "missing value after $1"
+                export ACE_COMMIT="$2"; shift 2 ;;
             *) die "unknown option to engine start: $1" ;;
         esac
     done
@@ -502,9 +509,9 @@ engine_dispatch() {
 aceman engine — control the acestream container
 
 Usage:
-  aceman engine start [--ram NG] [--cache NG] [--port N] [--p2p-port N]
+  aceman engine start [--ram NG] [--cache NG] [--port N] [--p2p-port N] [--commit SHA]
   aceman engine stop
-  aceman engine restart [--ram NG] [--cache NG] [--port N] [--p2p-port N]
+  aceman engine restart [--ram NG] [--cache NG] [--port N] [--p2p-port N] [--commit SHA]
   aceman engine status
 EOF
             ;;

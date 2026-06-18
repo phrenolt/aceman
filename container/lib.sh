@@ -57,28 +57,82 @@ validate_size_spec() {
 
 # ---- image builds -------------------------------------------------------
 
-# Build a podman image if it isn't already present. Internal helper —
-# both ensure_engine_image and ensure_web_image route through this.
+# ---- commit-based image identity ---------------------------------------
+#
+# We label every built image with `aceman.commit=<sha>` and check that
+# label on each launch. Match → skip rebuild; mismatch → rebuild. This
+# is deterministic where mtime is fragile: `git pull` updates mtimes
+# only for changed files, `git checkout` rewrites them all, `__pycache__`
+# entries pollute the newest-file probe, and `date -d` chokes on the
+# `+0000 UTC` suffix podman emits for `{{.Created}}`. Commit shas
+# don't have any of those problems.
+#
+# Dirty trees (uncommitted changes at HEAD) DON'T trust the label —
+# we rebuild every launch in that case. The layer cache keeps that
+# rebuild cheap (<1 s when nothing changed; just the final COPY layer
+# when something did).
+
+# Echo a full SHA for the spec ("HEAD" by default), or empty if we're
+# not in a git repo. Resolves to refs, short shas, tags — anything
+# `git rev-parse` accepts.
+_resolve_commit() {
+    local spec="${1:-HEAD}"
+    local root="${ACELIB_PROJECT_ROOT:?}"
+    ( cd "$root" && git rev-parse --verify "$spec" 2>/dev/null ) || return 1
+}
+
+# True iff the working tree has uncommitted changes (tracked files
+# only — untracked files don't count as "dirty" for build purposes,
+# they aren't in the Containerfile's COPY).
+_repo_is_dirty() {
+    local root="${ACELIB_PROJECT_ROOT:?}"
+    ! ( cd "$root" \
+        && git diff --quiet --ignore-submodules HEAD 2>/dev/null \
+        && git diff --quiet --cached --ignore-submodules 2>/dev/null )
+}
+
+# Echo the commit label stored on an image. Empty if no label / no
+# image / podman missing.
+_image_commit_label() {
+    podman image inspect "$1" --format '{{index .Labels "aceman.commit"}}' \
+        2>/dev/null
+}
+
+# Internal helper — given a tag + context + Containerfile, decide
+# whether a rebuild is needed and run it. Adds the aceman.commit
+# label on success.
 #
 # Args:
 #   $1 = image tag
-#   $2 = build context dir (passed as `.` to podman after `cd`)
-#   $3 = absolute path to the Containerfile
-#   $4 = short label for messages ("engine", "web")
-#   $5 = optional prerequisite file. If non-empty and the file is
-#        absent, return 1 with a guidance message.
-#   $6 = optional extra guidance line printed when $5 is missing.
-#
-# Returns 0 if podman is missing (caller is expected to require it
-# elsewhere when actually needed) or if the image is already built.
+#   $2 = build context dir (passed as `.` after cd)
+#   $3 = absolute Containerfile path
+#   $4 = label for messages ("engine", "web")
+#   $5 = optional prerequisite file (absent → guided error)
+#   $6 = optional extra guidance line printed when $5 is missing
 _ensure_podman_image() {
     local tag="$1" ctx="$2" cf="$3" label="$4"
     local pre="${5:-}" pre_hint="${6:-}"
     local prog="${PROG:-aceman}"
     command -v podman >/dev/null || return 0
-    if podman image exists "$tag" 2>/dev/null; then
-        return 0
+
+    # Resolve the desired commit (HEAD by default; user-pinned via
+    # ACE_COMMIT). Outside a git repo we just track presence.
+    local want_sha
+    want_sha="$(_resolve_commit "${ACE_COMMIT:-HEAD}")" || want_sha=""
+    local dirty=0
+    [ "${ACE_COMMIT:-HEAD}" = "HEAD" ] && _repo_is_dirty && dirty=1
+
+    # Cache hit: image exists AND its label matches AND we're not
+    # carrying uncommitted changes that would make the label a lie.
+    if [ "$dirty" = 0 ] && [ -n "$want_sha" ] \
+       && podman image exists "$tag" 2>/dev/null; then
+        local have_sha
+        have_sha="$(_image_commit_label "$tag")"
+        if [ "$have_sha" = "$want_sha" ]; then
+            return 0
+        fi
     fi
+
     [ -d "$ctx" ] || {
         echo "$prog: $label build context missing: $ctx" >&2; return 1; }
     [ -f "$cf" ] || {
@@ -88,78 +142,108 @@ _ensure_podman_image() {
         [ -n "$pre_hint" ] && echo "  $pre_hint" >&2
         return 1
     fi
-    echo "$prog: building $label image '$tag' (first run only, ~2 min)..." >&2
-    ( cd "$ctx" && podman build -t "$tag" -f "$cf" . ) >&2 || {
+
+    # Human-readable build banner so the user knows WHY a rebuild
+    # fires. "fresh" → no image yet; "pinned" → ACE_COMMIT set;
+    # "dirty" → uncommitted changes; otherwise a label drift.
+    local why="commit ${want_sha:0:12}"
+    if ! podman image exists "$tag" 2>/dev/null; then
+        why="$why (first build, ~2 min)"
+    elif [ "$dirty" = 1 ]; then
+        why="$why-dirty (uncommitted changes; rebuild every launch)"
+    elif [ "${ACE_COMMIT:-HEAD}" != "HEAD" ]; then
+        why="$why (pinned by --commit)"
+    else
+        why="$why (newer than current image)"
+    fi
+    echo "$prog: building $label image '$tag' — $why" >&2
+
+    local label_args=()
+    [ "$dirty" = 0 ] && [ -n "$want_sha" ] \
+        && label_args=(--label "aceman.commit=$want_sha")
+    ( cd "$ctx" && podman build -t "$tag" -f "$cf" \
+        "${label_args[@]}" . ) >&2 || {
         echo "$prog: $label image build failed; see output above" >&2
         return 1
     }
 }
 
-# Ensure the engine container image is present. Caller must set
-# $ACELIB_PROJECT_ROOT to the repo root (the dir containing
-# container/engine/Containerfile). Image tag falls back to the
-# project-wide default if unset.
+# Extract the source tree of a given commit into a temp directory so
+# `podman build` can use it as the context. Needed when ACE_COMMIT
+# points at something other than HEAD. The engine tarball isn't in
+# git (`.gitignore`), so we splice the current dist/engine.tar.gz
+# into the temp context after extraction — the wrapper running this
+# is from the current working tree, so its tarball is what the user
+# has on disk right now. Echoes the temp dir path; caller is
+# responsible for `rm -rf` after the build.
+_extract_commit_tree() {
+    local sha="$1"
+    local root="${ACELIB_PROJECT_ROOT:?}"
+    local prog="${PROG:-aceman}"
+    local tmp
+    tmp="$(mktemp -d -t aceman-build-XXXXXX)" || return 1
+    if ! ( cd "$root" && git archive --format=tar "$sha" | tar -x -C "$tmp" ); then
+        echo "$prog: git archive $sha failed" >&2
+        rm -rf "$tmp"
+        return 1
+    fi
+    # Engine tarball is .gitignored. Copy from the running checkout so
+    # the engine image build at this commit has something to extract.
+    if [ -f "$root/container/engine/dist/engine.tar.gz" ]; then
+        mkdir -p "$tmp/container/engine/dist"
+        cp "$root/container/engine/dist/engine.tar.gz" \
+           "$tmp/container/engine/dist/engine.tar.gz"
+    fi
+    printf '%s' "$tmp"
+}
+
+# Ensure the engine container image is present and labelled with the
+# desired commit. Build context is container/engine/.
 ensure_engine_image() {
     local root="${ACELIB_PROJECT_ROOT:?ACELIB_PROJECT_ROOT must be set}"
     local tag="${ACE_IMAGE:-localhost/acestream:vetted}"
     local ctx="$root/container/engine"
-    _ensure_podman_image \
-        "$tag" "$ctx" "$ctx/Containerfile" "engine" \
-        "$ctx/dist/engine.tar.gz" \
-        "download from acestream.media and place it at the path above, then re-run."
+    local cf="$ctx/Containerfile"
+    local pre="$ctx/dist/engine.tar.gz"
+    local hint="download from acestream.media and place it at the path above, then re-run."
+
+    if [ -n "${ACE_COMMIT:-}" ] && [ "$ACE_COMMIT" != "HEAD" ]; then
+        local sha tmp
+        sha="$(_resolve_commit "$ACE_COMMIT")" || {
+            echo "${PROG:-aceman}: invalid commit: $ACE_COMMIT" >&2; return 1; }
+        tmp="$(_extract_commit_tree "$sha")" || return 1
+        local rc=0
+        ACE_COMMIT="$sha" _ensure_podman_image \
+            "$tag" "$tmp/container/engine" "$tmp/container/engine/Containerfile" \
+            "engine" "$tmp/container/engine/dist/engine.tar.gz" "$hint" \
+            || rc=$?
+        rm -rf "$tmp"
+        return "$rc"
+    fi
+    _ensure_podman_image "$tag" "$ctx" "$cf" "engine" "$pre" "$hint"
 }
 
-# Ensure the web container image is present and up-to-date with the
-# checked-out source tree. Build context is the project root
-# (Containerfile.web does `COPY web /app/web`).
-#
-# Unlike the engine image (whose contents come from an external
-# tarball and almost never change between runs), the web image bakes
-# in the JS bundle / python web frontend that the operator iterates
-# on. Without an auto-rebuild step every `git pull` would leave the
-# container serving the previous bundle, and "why isn't my fix
-# working?" becomes a 20-minute debugging detour. The cheap mtime
-# comparison below catches that: if anything under web/ is newer
-# than the image's CREATED timestamp, we re-run `podman build`.
-#
-# `podman build` with the layer cache is nearly free in the
-# everything-unchanged case (a few hundred ms of metadata checks);
-# when web/ has changed, only the final `COPY web` layer needs
-# redoing (apt install ffmpeg etc. stays cached). So the cost of
-# always checking is small enough that we just check every launch.
+# Ensure the web container image is present and labelled. Build
+# context is the project root because Containerfile.web does
+# `COPY web /app/web`.
 ensure_web_image() {
     local root="${ACELIB_PROJECT_ROOT:?ACELIB_PROJECT_ROOT must be set}"
     local tag="${ACE_WEB_IMAGE:-localhost/aceman-web:vetted}"
     local cf="$root/container/aceman-web/Containerfile.web"
-    command -v podman >/dev/null || return 0
 
-    # First-run / image-missing path: surface progress with the same
-    # banner as ensure_engine_image, then return.
-    if ! podman image exists "$tag" 2>/dev/null; then
-        _ensure_podman_image "$tag" "$root" "$cf" "web"
-        return $?
+    if [ -n "${ACE_COMMIT:-}" ] && [ "$ACE_COMMIT" != "HEAD" ]; then
+        local sha tmp
+        sha="$(_resolve_commit "$ACE_COMMIT")" || {
+            echo "${PROG:-aceman}: invalid commit: $ACE_COMMIT" >&2; return 1; }
+        tmp="$(_extract_commit_tree "$sha")" || return 1
+        local rc=0
+        ACE_COMMIT="$sha" _ensure_podman_image \
+            "$tag" "$tmp" "$tmp/container/aceman-web/Containerfile.web" "web" \
+            || rc=$?
+        rm -rf "$tmp"
+        return "$rc"
     fi
-
-    # Image is present — check whether web/ has been touched since it
-    # was built. `find -printf '%T@'` is portable across GNU find; if
-    # either timestamp probe comes back empty (date can't parse the
-    # podman string, find isn't GNU, etc.) we conservatively skip the
-    # rebuild instead of looping rebuilds forever on a parse mismatch.
-    local image_ts web_ts
-    image_ts="$(podman image inspect "$tag" --format '{{.Created}}' 2>/dev/null)"
-    [ -n "$image_ts" ] || return 0
-    image_ts="$(date -d "$image_ts" +%s 2>/dev/null)" || return 0
-    web_ts="$(find "$root/web" "$cf" -type f -printf '%T@\n' 2>/dev/null \
-              | sort -nr | head -1 | cut -d. -f1)"
-    [ -n "$web_ts" ] || return 0
-    if [ "$web_ts" -le "$image_ts" ]; then
-        return 0
-    fi
-
-    local prog="${PROG:-aceman}"
-    echo "$prog: web/ source newer than '$tag' image — rebuilding (incremental)..." >&2
-    ( cd "$root" && podman build -t "$tag" -f "$cf" . ) >&2 \
-        || { echo "$prog: web image rebuild failed; see output above" >&2; return 1; }
+    _ensure_podman_image "$tag" "$root" "$cf" "web"
 }
 
 # ---- shared podman network ---------------------------------------------
