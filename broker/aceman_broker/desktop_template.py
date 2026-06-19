@@ -14,10 +14,20 @@ possible) live here, not coupled to a temp-dir filesystem fixture.
 
 from __future__ import annotations
 
+import pathlib
+
 from .desktop_helpers import desktop_quote_arg
 
 
 DESKTOP_SCHEME_HANDLER = "x-scheme-handler/acestream"
+
+# Absolute path to the bundled 512x512 PNG. Lives alongside the broker
+# package; this module is at broker/aceman_broker/desktop_template.py
+# and the asset is at broker/assets/aceman.png.
+ICON_PATH = str(
+    (pathlib.Path(__file__).resolve().parent.parent
+     / "assets" / "aceman.png")
+)
 
 
 def render_desktop_entry(
@@ -60,6 +70,6 @@ def render_desktop_entry(
         "Categories=AudioVideo;Player;Network;\n"
         "Keywords=acestream;video;p2p;stream;\n"
         "StartupNotify=true\n"
-        "Icon=multimedia-video-player\n"
+        f"Icon={ICON_PATH}\n"
         f"MimeType={scheme_handler};\n"
     )
