@@ -307,6 +307,16 @@ function clearCidInput() {
   if (!input) return;
   input.value = '';
   input.focus();
+  // Drop the last-played stash so a refresh doesn't restore the
+  // cid the user just dismissed, and reset the now-playing card
+  // alongside it — the ✕ is the user explicitly saying "I'm done
+  // with this channel", treat it like a stop+forget.
+  clearLastPlay(localStorage);
+  current = null;
+  setTabTitle('');
+  setNowPlayingName('', '');
+  $('now-playing').style.display = 'none';
+  updateSaveButton();
   refreshSearchSection();
   refreshClearButton();
   onSearchInput();
@@ -1176,8 +1186,17 @@ async function refreshEngineStatus() {
     refreshPlaybackMoveButton();
   }
   // Wrapper is definitely gone — drop the stash so a future reload
-  // doesn't repopulate the input from a stale session.
-  if (s.wrapper_alive === false) clearLastPlay(localStorage);
+  // doesn't repopulate the input from a stale session. BUT only when
+  // we're actually in external-player mode: in-browser playback has
+  // no host-side wrapper by design (wrapper_alive is permanently
+  // false), so an unconditional clear here would wipe the cid every
+  // poll cycle and the in-browser refresh-rehydrate path would never
+  // see anything in localStorage.
+  if (s.wrapper_alive === false
+      && cfg.playback_mode === 'external'
+      && !mpegtsPlayer) {
+    clearLastPlay(localStorage);
+  }
   const el = $('engine-status');
   const btn = $('engine-toggle');
   const hint = $('engine-toggle-hint');
@@ -2180,5 +2199,43 @@ async function toggleDesktopEntry() {
           'Please wait while Aceman is getting ready…');
       if (ready) play({ skipConfirm: true });
     })();
+  } else {
+    // No ?play= in URL: rehydrate the input from the last-played
+    // stash so a refresh in the middle of in-tab/browser playback
+    // doesn't blank the cid. The external-player rehydration path
+    // in refreshEngineStatus only fires when a host-side wrapper
+    // is alive; the in-browser case has no wrapper, so without
+    // this the user loses the cid even though we saved it on play().
+    const last = loadLastPlay(localStorage);
+    if (last && last.cid && /^[a-f0-9]{40}$/.test(last.cid)) {
+      $('cid-input').value = last.cid;
+      // Make the ✕ visible — refreshClearButton's display gate is
+      // input.value, so any code path that sets the value
+      // programmatically (rehydrate / play / fav click) needs to
+      // poke this for the button to actually appear.
+      refreshClearButton();
+      refreshSearchSection();
+      // Render the channel name in the now-playing card too — the
+      // stash carries the name/sub snapshot from play(), but if the
+      // cid showed up in favourites only AFTER that play (or was
+      // renamed since), resolveDisplayName against the current
+      // allFavs list wins. allFavs is filled by the parallel init
+      // IIFE's loadFavs await, so try twice: once immediately for
+      // the fast path, once after favs have settled.
+      const renderName = () => {
+        const { name, sub } =
+            resolveDisplayName(last, allFavs, last.cid);
+        if (!name) return;
+        current = { cid: last.cid, name, altName: sub };
+        setTabTitle(name);
+        setNowPlayingName(name, sub);
+        $('now-playing').style.display = 'block';
+        updateSaveButton();
+      };
+      renderName();
+      // Backup pass for the case where allFavs was still empty on
+      // first render (init IIFE hadn't awaited /api/favs yet).
+      setTimeout(renderName, 800);
+    }
   }
 })();
