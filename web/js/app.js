@@ -1265,19 +1265,37 @@ async function saveAutostart() {
 let detectedPlayers = [];   // [{name, source}]
 let detectedBrowsers = [];  // [{name, source}]
 
+// Fetch the available[] list with a one-shot retry when the server
+// signals broker_error:true. That sentinel comes from the route's
+// degrade-on-EngineError path: a 200 with an empty list because the
+// broker call failed (typically a cold `flatpak list` blowing the
+// 10 s broker.call timeout). Without the retry the user is stuck
+// staring at an empty dropdown until they reload the page; with it,
+// the second call lands after the broker's flatpak cache is warm
+// and the real list shows up.
+async function _loadDetected(url) {
+  let r;
+  try { r = await api(url); }
+  catch (_) { return []; }
+  if (r && r.broker_error) {
+    // 2 s lets a slow first flatpak/list call finish AND warms the
+    // broker's per-module cache so the retry probe is a hash lookup
+    // rather than another subprocess fork+exec. The retry itself is
+    // best-effort: if it ALSO comes back broker_error, we accept
+    // the empty list and stop retrying (no infinite loop).
+    await new Promise(res => setTimeout(res, 2000));
+    try { r = await api(url); } catch (_) { return []; }
+  }
+  return Array.isArray(r && r.available) ? r.available : [];
+}
+
 async function loadPlayers() {
-  try {
-    const r = await api('/api/players');
-    detectedPlayers = Array.isArray(r.available) ? r.available : [];
-  } catch (_) { detectedPlayers = []; }
+  detectedPlayers = await _loadDetected('/api/players');
   renderPlaybackTargets();
 }
 
 async function loadBrowsers() {
-  try {
-    const r = await api('/api/browsers');
-    detectedBrowsers = Array.isArray(r.available) ? r.available : [];
-  } catch (_) { detectedBrowsers = []; }
+  detectedBrowsers = await _loadDetected('/api/browsers');
   renderPlaybackTargets();
 }
 
