@@ -160,7 +160,7 @@ class RegistryShapeTests(unittest.TestCase):
             "engine.stop", "engine.restart",
             "image.status", "image.install", "image.remove",
             "players.list", "player.stop",
-            "browsers.list",
+            "browsers.list", "browser.spawn",
             "desktop.status", "desktop.install", "desktop.uninstall",
             "desktop.restore_mimeapps_backup",
             "broker.shutdown", "broker.respawn",
