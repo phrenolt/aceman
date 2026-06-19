@@ -21,8 +21,13 @@ def list_browsers(req: Request, ctx: RouteContext) -> Response:
     try:
         payload = ctx.browsers_client.list()
     except EngineError as e:
+        # `broker_error: true` marks this empty list as non-authoritative
+        # so the frontend can schedule a retry. See the same comment in
+        # routes/players.py for the why (cold flatpak list blowing the
+        # broker.call budget is the typical trigger).
         _log("browsers", "broker call failed: %s", e)
-        payload = {"platform": "unknown", "available": []}
+        payload = {"platform": "unknown", "available": [],
+                   "broker_error": True}
     for row in payload.get("available", []):
         row.pop("argv", None)
     return Response.json(200, payload)
