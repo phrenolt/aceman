@@ -124,6 +124,20 @@ class DesktopTemplateTests(unittest.TestCase):
                 self.assertIn(r"\`whoami\`", line)
                 break
 
+    def test_icon_points_at_bundled_png(self):
+        # Static reference to the asset shipped under broker/assets/.
+        # The template resolves the absolute path at import time from
+        # its own __file__, so the line is deterministic per checkout.
+        self.assertIn("Icon=", self.body)
+        for line in self.body.splitlines():
+            if line.startswith("Icon="):
+                self.assertTrue(
+                    line.endswith("/broker/assets/aceman.png"),
+                    f"unexpected icon line: {line!r}")
+                break
+        else:
+            self.fail("no Icon= line in output")
+
 
 if __name__ == "__main__":
     unittest.main()
