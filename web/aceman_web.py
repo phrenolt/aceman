@@ -1833,16 +1833,16 @@ def _open_in_chosen_browser(url: str) -> None:
     """Open ``url`` in the browser the user picked in the UI.
 
     Resolution order:
-      1. config.default_browser (+ default_browser_source) → look up
-         argv from the broker's browsers.list and spawn it directly,
-         detached. This is what makes "open my acestream:// click in
-         Brave-flatpak" work even when the OS default is Firefox.
+      1. config.default_browser (+ default_browser_source) → ask the
+         broker to spawn it on the host. The broker has DISPLAY / DBus /
+         Wayland session env that the web container lacks, so this is
+         the only path that actually launches a GUI browser when we
+         run in the default containerised mode.
       2. Anything else (no preference, broker unreachable, browser
          uninstalled since last save) → fall back to the stdlib
-         ``webbrowser.open`` so we still open *something*.
-
-    Spawned detached (start_new_session=True, stdio to DEVNULL) so the
-    browser outlives the wrapper script and doesn't print to our log.
+         ``webbrowser.open``. In native mode that opens the OS
+         default; in container mode it almost certainly fails, but
+         we log and move on rather than crashing the request.
     """
     import webbrowser
     cfg = Handler.config
@@ -1851,36 +1851,17 @@ def _open_in_chosen_browser(url: str) -> None:
     source = cfg.get("default_browser_source", "") if cfg else ""
     if name and bc is not None:
         try:
-            payload = bc.list()
+            result = bc.spawn(name, source, url)
         except EngineError as e:
-            _log("browsers", "list failed during open(%s): %s", url, e)
-            payload = {"available": []}
-        argv = None
-        for row in payload.get("available", []):
-            if row.get("name") == name and (
-                not source or row.get("source") == source
-            ):
-                argv = row.get("argv")
-                if argv:
-                    break
-        if argv:
-            try:
-                subprocess.Popen(
-                    list(argv) + [url],
-                    stdin=subprocess.DEVNULL,
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                    start_new_session=True,
-                )
-                _log("browsers", "opened %s in %s (%s)",
-                     url, name, source or "any")
-                return
-            except OSError as e:
-                _log("browsers", "spawn %s failed (%s); falling back to default",
-                     argv, e)
-        else:
-            _log("browsers", "no match for %s/%s in available list; "
-                 "falling back to default", name, source or "any")
+            _log("browsers", "spawn(%s/%s) broker error: %s",
+                 name, source or "any", e)
+            result = {"opened": False, "reason": str(e)}
+        if result.get("opened"):
+            _log("browsers", "opened %s in %s (%s)",
+                 url, name, source or "any")
+            return
+        _log("browsers", "broker.spawn refused (%s); falling back to default",
+             result.get("reason", "unknown"))
     webbrowser.open(url)
 
 
