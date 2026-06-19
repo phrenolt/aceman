@@ -398,7 +398,7 @@
        app.js when isWslMode is true. */
     .top-row.top-row-solo { grid-template-columns: 1fr; }
   }
-  @media (min-width: 1400px) {
+  @media (min-width: 1260px) {
     body { max-width: 1700px; }
     /* Wide-screen layout: favourites get their own left column spanning
        every row of the right side (top-row → search → play → setup),
