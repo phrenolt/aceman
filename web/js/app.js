@@ -603,13 +603,14 @@ function startInBrowserPlayback(cid) {
       const codec = (info && (info.videoCodec || info.mimeType)) || 'video';
       const audio = (info && info.audioCodec) ? ' / ' + info.audioCodec : '';
       mediaInfoText = 'Playing — ' + codec + audio;
-      // While the pre-roll buffer is filling, leave the "Buffering …"
-      // counter up; _preRollBuffer shows this once it releases.
-      if (buffering) return;
-      status.textContent = mediaInfoText;
-      status.className = 'gate-hint';
+      // renderStatus keeps the codec/format text and appends the live
+      // buffer figure; it no-ops while the pre-roll counter is up.
+      renderStatus();
     });
     mpegtsPlayer.on(E.ERROR, (type, detail) => {
+      // Freeze the line on the error — stop the health ticker from
+      // overwriting it with the next "· buffer" refresh.
+      _stopBufferHealth();
       console.warn('[mpegts]', type, detail);
       status.textContent = 'Stream error: ' + type
           + (detail && detail.code ? ' (code ' + detail.code + ')' : '');
@@ -629,8 +630,23 @@ function startInBrowserPlayback(cid) {
       status.className = 'gate-hint warn';
     });
   };
-  if (!buffering) {
+  // Live status line during playback: the codec/format from MEDIA_INFO
+  // PLUS how many seconds are buffered ahead of the playhead, side by
+  // side. The buffer figure is the runway — watch it drain toward 0 if
+  // the engine stalls or slows before the video actually stutters.
+  const renderStatus = () => {
+    if (buffering) return;            // pre-roll counter owns the line until release
+    const base = mediaInfoText || 'Playing';
+    const ahead = bufferedAhead(v.buffered, v.currentTime);
+    status.textContent = base + ' · buffer ' + ahead.toFixed(1) + ' s';
+    status.className = 'gate-hint';
+  };
+  const beginPlayback = () => {
     startPlay();
+    _startBufferHealth(renderStatus);
+  };
+  if (!buffering) {
+    beginPlayback();
     return;
   }
   // Strip the native controls while the cushion fills — otherwise the
@@ -641,9 +657,25 @@ function startInBrowserPlayback(cid) {
   _preRollBuffer(v, status, bufferSecs, () => {
     buffering = false;
     v.controls = true;
-    if (mediaInfoText) { status.textContent = mediaInfoText; status.className = 'gate-hint'; }
-    startPlay();
+    beginPlayback();
   });
+}
+
+// Once-a-second ticker that refreshes the buffered-ahead figure in the
+// status line during playback. Module-level so Stop / a fresh Play /
+// a stream error can clear it (otherwise it'd keep painting over them).
+let _bufferHealthTimer = null;
+
+function _stopBufferHealth() {
+  if (!_bufferHealthTimer) return;
+  clearInterval(_bufferHealthTimer);
+  _bufferHealthTimer = null;
+}
+
+function _startBufferHealth(render) {
+  _stopBufferHealth();
+  render();                          // paint immediately, don't wait 1 s
+  _bufferHealthTimer = setInterval(render, 1000);
 }
 
 // Pending pre-roll timers, so a Stop / fresh Play can cancel an
@@ -695,8 +727,10 @@ function getPlaybackBuffer() {
 function stopInBrowserPlayback() {
   const v = $('pb-video');
   const status = $('pb-video-status');
-  // Drop any in-flight pre-roll wait before tearing the player down.
+  // Drop any in-flight pre-roll wait and the buffer-health ticker
+  // before tearing the player down.
   _cancelPreRoll();
+  _stopBufferHealth();
   if (mpegtsPlayer) {
     try { mpegtsPlayer.pause(); } catch (_) {}
     try { mpegtsPlayer.unload(); } catch (_) {}
