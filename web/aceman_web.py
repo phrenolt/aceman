@@ -841,22 +841,18 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
     @classmethod
     def _libplacebo_scale(cls, src_w: "int|None", src_h: "int|None",
-                          out_h: int) -> list:
-        """Build libplacebo filter nodes for GPU upscaling.
+                          out_h: int, vaapi_out: bool = False) -> list:
+        """Build libplacebo filter nodes for GPU upscaling (Vulkan hw frames).
 
-        Prescales to (src_w, src_h) first so libplacebo always sees fixed
-        dimensions — prevents mid-stream Vulkan context reinit on corrupt input.
-
-        Uses FSRCNNX_x2 neural shader if present and the target is exactly
-        2× the source; otherwise falls back to ewa_lanczos (high-quality
-        Lanczos, equivalent to what mpv uses by default).
+        vaapi_out=True: ends with hwmap=derive_device=vaapi for zero-copy
+        VAAPI encode — Vulkan DMA-buf is shared directly with VAAPI on AMD/Intel.
+        vaapi_out=False: ends with hwdownload,format=yuv420p for CPU encode.
         """
         import os as _os
         nodes = []
         if src_w and src_h:
             nodes.append(f"scale={src_w}:{src_h}")
-        # Upload to Vulkan so libplacebo gets hw frames (required in this build;
-        # auto_scale_0 cannot produce Vulkan frames from CPU yuv420p).
+        # Upload to Vulkan (required — auto_scale_0 cannot produce Vulkan frames).
         nodes.append("hwupload")
 
         use_fsrcnnx = (
@@ -876,9 +872,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
             nodes.append(f"libplacebo=w=-2:h={out_h}:upscaler=ewa_lanczos")
             _log("proxy", "scale: libplacebo ewa_lanczos → %dp%s",
                  out_h, " (FSRCNNX not available)" if not _os.path.exists(cls._FSRCNNX_SHADER) else "")
-        # Download back to CPU for the downstream encoder.
-        nodes.append("hwdownload")
-        nodes.append("format=yuv420p")
+
+        if vaapi_out:
+            # Zero-copy: map Vulkan DMA-buf to VAAPI surface (same physical GPU).
+            nodes.append("hwmap=derive_device=vaapi")
+        else:
+            nodes.append("hwdownload")
+            nodes.append("format=yuv420p")
         return nodes
 
     @classmethod
@@ -1003,21 +1003,36 @@ class Handler(http.server.BaseHTTPRequestHandler):
             filters.append("yadif")
 
         if scale_h:
-            vulkan = cls._VULKAN_INIT
-            pre = [
-                "ffmpeg", "-hide_banner", "-loglevel", "warning",
-            ] + vulkan + [
-                "-fflags", "+nobuffer+discardcorrupt", "-err_detect", "ignore_err",
-                "-flush_packets", "1",
-                "-i", playback_url,
-            ]
             src = cls._probe_src_dims(playback_url)
             src_w, src_h = src if src else (None, None)
-            filters.extend(cls._libplacebo_scale(src_w, src_h, scale_h))
-            sw = (["-c:v", "libx264", "-preset", "ultrafast",
-                   "-tune", "zerolatency", "-pix_fmt", "yuv420p"] + cls._FFMPEG_GOP
-                  if cls._ffmpeg_has_h264_decoder else ["-c:v", "copy"])
-            video = ["-vf", ",".join(filters)] + sw
+            if do_enc:
+                # Zero-copy path: Vulkan device derived from VAAPI so they share
+                # the same DMA-bufs.  hwmap hands the upscaled frame to VAAPI
+                # without a CPU round-trip — critical on iGPU (shared DDR).
+                pre = [
+                    "ffmpeg", "-hide_banner", "-loglevel", "warning",
+                    "-init_hw_device", f"vaapi=va:{device}",
+                    "-init_hw_device", "vulkan=vk@va",
+                    "-filter_hw_device", "vk",
+                    "-fflags", "+nobuffer+discardcorrupt", "-err_detect", "ignore_err",
+                    "-flush_packets", "1",
+                    "-i", playback_url,
+                ]
+                filters.extend(cls._libplacebo_scale(src_w, src_h, scale_h, vaapi_out=True))
+                video = ["-vf", ",".join(filters), "-c:v", "h264_vaapi"] + cls._FFMPEG_GOP_VAAPI
+            else:
+                pre = [
+                    "ffmpeg", "-hide_banner", "-loglevel", "warning",
+                ] + cls._VULKAN_INIT + [
+                    "-fflags", "+nobuffer+discardcorrupt", "-err_detect", "ignore_err",
+                    "-flush_packets", "1",
+                    "-i", playback_url,
+                ]
+                filters.extend(cls._libplacebo_scale(src_w, src_h, scale_h))
+                sw = (["-c:v", "libx264", "-preset", "ultrafast",
+                       "-tune", "zerolatency", "-pix_fmt", "yuv420p"] + cls._FFMPEG_GOP
+                      if cls._ffmpeg_has_h264_decoder else ["-c:v", "copy"])
+                video = ["-vf", ",".join(filters)] + sw
         else:
             pre = [
                 "ffmpeg", "-hide_banner", "-loglevel", "warning",
