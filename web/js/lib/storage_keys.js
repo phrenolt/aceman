@@ -12,5 +12,6 @@ export const KEYS = Object.freeze({
   GLOW: 'aceman.acemanGlow',
   SHOW_ALL_BROWSERS: 'aceman.showAllBrowsers',
   PLAYBACK_BUFFER: 'aceman.playbackBuffer', // in-tab pre-roll seconds
-  RESTARTED_AT: 'aceman.restartedAt', // sessionStorage breadcrumb
+  RESTARTED_AT: 'aceman.restartedAt',       // sessionStorage breadcrumb
+  GPU_ACCEL: 'aceman.gpuAccel',             // GPU acceleration settings JSON
 });

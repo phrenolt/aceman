@@ -101,6 +101,7 @@ from aceman.broker_client import (
     BrowsersBrokerClient,
     DesktopBrokerClient,
     EngineBrokerClient,
+    GpuBrokerClient,
     ImageBrokerClient,
     PlayersBrokerClient,
 )
@@ -282,6 +283,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
     config: "Config | None" = None
     search_proxy: "SearchProxy | None" = None
     desktop_entry: "DesktopBrokerClient | None" = None
+    gpu_client: "GpuBrokerClient | None" = None
+    _gpu_caps: "dict | None" = None
     image_mgr: "ImageBrokerClient | None" = None
     players_client: "PlayersBrokerClient | None" = None
     browsers_client: "BrowsersBrokerClient | None" = None
@@ -800,58 +803,165 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 cls._ffmpeg_has_h264_decoder = True
                 return
 
+    # Common tail shared by every ffmpeg path.
+    _FFMPEG_AUDIO_OUT = ["-c:a", "aac", "-b:a", "128k", "-f", "mpegts", "-"]
+    # libx264/nvenc GOP: -sc_threshold and -bf are encoder-private options.
+    _FFMPEG_GOP       = ["-g", "50", "-keyint_min", "50", "-sc_threshold", "0", "-bf", "0"]
+    # h264_vaapi GOP: drop -sc_threshold (libx264-only; causes a warning with vaapi).
+    _FFMPEG_GOP_VAAPI = ["-g", "50", "-keyint_min", "50", "-bf", "0"]
+
     @classmethod
-    def _ffmpeg_cmd(cls, playback_url: str) -> list:
-        """Build the ffmpeg argv. Two modes:
+    def _ffmpeg_cmd(cls, playback_url: str, gpu: "dict | None" = None) -> list:
+        """Dispatch to the appropriate ffmpeg command builder.
 
-        FULL (cls._ffmpeg_has_h264_decoder = True):
-            Decode → deinterlace (yadif) → re-encode with libx264 in
-            ultrafast/zerolatency mode. Output is progressive H.264 with
-            short, regular GOPs (~2s) and a forced IDR every GOP — the
-            shape every MSE decoder, hardware or software, accepts.
-            Costs ~30-40% of a CPU core per 1080p25 stream.
+        ``gpu`` is parsed from the proxy request's query string:
+            {"backend": "nvidia"|"vaapi"|"qsv",
+             "encode": bool, "deinterlace": bool, "scale": int|None}
 
-        REMUX (cls._ffmpeg_has_h264_decoder = False, Fedora ffmpeg-free):
-            -c:v copy only. Some streams play (clean progressive); others
-            fail in MSE because of GOP alignment / interlace. The user
-            can install RPM Fusion ffmpeg to unlock full mode.
-
-        Common to both: -c:a aac -b:a 128k transcodes the audio because
-        MP3-in-fMP4 is refused by every browser's MSE.
+        Safety: if a backend is requested but the capability probe at
+        startup found it absent, we log and fall back to CPU so the
+        stream still plays rather than failing silently.
         """
-        common_pre = [
-            "ffmpeg",
-            "-hide_banner", "-loglevel", "warning",
-            "-fflags", "+nobuffer",
+        if not gpu:
+            return cls._cpu_cmd(playback_url)
+        backend = gpu.get("backend")
+        if backend == "nvidia":
+            if not (cls._gpu_caps or {}).get("nvidia"):
+                _log("proxy", "NVIDIA requested but nvidia-smi absent — CPU fallback")
+                return cls._cpu_cmd(playback_url)
+            _log("proxy", "using NVIDIA path (enc=%s dei=%s scale=%s)",
+                 gpu.get("encode"), gpu.get("deinterlace"), gpu.get("scale"))
+            return cls._nvidia_cmd(playback_url, gpu)
+        if backend in ("vaapi", "qsv"):
+            if not (cls._gpu_caps or {}).get("vaapi"):
+                _log("proxy", "VA-API requested but device absent — CPU fallback")
+                return cls._cpu_cmd(playback_url)
+            _log("proxy", "using VA-API path (enc=%s dei=%s scale=%s)",
+                 gpu.get("encode"), gpu.get("deinterlace"), gpu.get("scale"))
+            return cls._vaapi_cmd(playback_url, gpu)
+        _log("proxy", "unrecognised backend %r — CPU fallback", backend)
+        return cls._cpu_cmd(playback_url)
+
+    @classmethod
+    def _cpu_cmd(cls, playback_url: str) -> list:
+        """CPU path (original behaviour).
+
+        FULL (has H.264 decoder): decode → yadif → libx264 ultrafast.
+        REMUX (ffmpeg-free): -c:v copy; works for clean progressive streams.
+        Audio is always re-encoded to AAC because MP3-in-fMP4 is refused
+        by every browser MSE implementation.
+        """
+        pre = [
+            "ffmpeg", "-hide_banner", "-loglevel", "warning",
+            "-fflags", "+nobuffer+discardcorrupt", "-err_detect", "ignore_err",
             "-flush_packets", "1",
             "-i", playback_url,
         ]
         if cls._ffmpeg_has_h264_decoder:
-            video_args = [
-                # Deinterlace. yadif default = mode 0 (frame rate kept,
-                # one output frame per input frame). Mode 1 would double
-                # the frame rate but at higher CPU cost.
+            video = [
                 "-vf", "yadif",
                 "-c:v", "libx264",
-                "-preset", "ultrafast",     # fastest CPU; live needs it
-                "-tune", "zerolatency",     # disable lookahead etc.
-                "-pix_fmt", "yuv420p",      # universal browser support
-                # 2-second GOPs at 25fps. Forced regular IDRs so mpegts.js
-                # never has to wait for a keyframe (the very thing that
-                # killed Brave SW decode on the last stream).
-                "-g", "50",
-                "-keyint_min", "50",
-                "-sc_threshold", "0",
-                "-bf", "0",                 # no B-frames (lower latency)
-            ]
+                "-preset", "ultrafast", "-tune", "zerolatency",
+                "-pix_fmt", "yuv420p",
+            ] + cls._FFMPEG_GOP
         else:
-            video_args = ["-c:v", "copy"]
-        return common_pre + video_args + [
-            "-c:a", "aac",
-            "-b:a", "128k",
-            "-f", "mpegts",
-            "-",
+            video = ["-c:v", "copy"]
+        return pre + video + cls._FFMPEG_AUDIO_OUT
+
+    @classmethod
+    def _nvidia_cmd(cls, playback_url: str, gpu: dict) -> list:
+        """NVIDIA path: NVDEC decode → CUDA filters → NVENC encode.
+
+        All processing stays on the GPU. Falls back to libx264 if the
+        caller enabled filters but not NVENC (rare; avoids a dead end).
+        """
+        do_enc = gpu.get("encode", False)
+        do_dei = gpu.get("deinterlace", False)
+        scale_h = gpu.get("scale")  # int height or None
+
+        pre = [
+            "ffmpeg", "-hide_banner", "-loglevel", "warning",
+            "-fflags", "+nobuffer+discardcorrupt", "-err_detect", "ignore_err",
+            "-flush_packets", "1",
+            "-hwaccel", "cuda", "-hwaccel_output_format", "cuda",
+            "-i", playback_url,
         ]
+
+        filters = []
+        if do_dei:
+            filters.append("yadif_cuda")
+        if scale_h:
+            filters.append(f"scale_npp=-2:{scale_h}:interp_algo=super")
+
+        if do_enc:
+            vf = (["-vf", ",".join(filters)] if filters else [])
+            video = vf + [
+                "-c:v", "h264_nvenc",
+                "-preset", "p1", "-tune", "ll",
+            ] + cls._FFMPEG_GOP
+        else:
+            # Filters without NVENC: download back to system memory.
+            dl = filters + ["hwdownload", "format=nv12"] if filters else []
+            vf = (["-vf", ",".join(dl)] if dl else [])
+            if cls._ffmpeg_has_h264_decoder:
+                video = vf + [
+                    "-c:v", "libx264",
+                    "-preset", "ultrafast", "-tune", "zerolatency",
+                    "-pix_fmt", "yuv420p",
+                ] + cls._FFMPEG_GOP
+            else:
+                video = ["-c:v", "copy"]
+
+        return pre + video + cls._FFMPEG_AUDIO_OUT
+
+    @classmethod
+    def _vaapi_cmd(cls, playback_url: str, gpu: dict) -> list:
+        """VA-API path (Intel / AMD): hardware H.264 decode → VAAPI filters → h264_vaapi.
+
+        Using hardware decode (-hwaccel vaapi) keeps frames on the GPU and
+        avoids the software decoder's 'no frame!' stalls on corrupt packets
+        from acestream. VCN handles corrupt H.264 input silently rather than
+        dropping frames and starving the filter chain.
+        """
+        do_enc = gpu.get("encode", False)
+        do_dei = gpu.get("deinterlace", False)
+        scale_h = gpu.get("scale")
+        device = ((cls._gpu_caps or {}).get("vaapi") or {}).get(
+            "device", "/dev/dri/renderD128")
+
+        pre = [
+            "ffmpeg", "-hide_banner", "-loglevel", "warning",
+            "-fflags", "+nobuffer+discardcorrupt", "-err_detect", "ignore_err",
+            "-hwaccel", "vaapi",
+            "-hwaccel_device", device,
+            "-hwaccel_output_format", "vaapi",
+            "-flush_packets", "1",
+            "-i", playback_url,
+        ]
+
+        # Frames are already in VAAPI memory from hardware decode — no
+        # format=nv12,hwupload step needed.
+        filters = []
+        if do_dei:
+            filters.append("deinterlace_vaapi")
+        if scale_h:
+            filters.append(f"scale_vaapi=-2:{scale_h}")
+
+        if do_enc:
+            vf = (["-vf", ",".join(filters)] if filters else [])
+            video = vf + ["-c:v", "h264_vaapi"] + cls._FFMPEG_GOP_VAAPI
+        else:
+            # Download back to system RAM for libx264 fallback.
+            dl = filters + ["hwdownload", "format=nv12"]
+            if cls._ffmpeg_has_h264_decoder:
+                video = ["-vf", ",".join(dl),
+                         "-c:v", "libx264",
+                         "-preset", "ultrafast", "-tune", "zerolatency",
+                         "-pix_fmt", "yuv420p"] + cls._FFMPEG_GOP
+            else:
+                video = ["-vf", "hwdownload,format=nv12", "-c:v", "copy"]
+
+        return pre + video + cls._FFMPEG_AUDIO_OUT
 
     @staticmethod
     def _kill_proc(proc) -> None:
@@ -897,10 +1007,28 @@ class Handler(http.server.BaseHTTPRequestHandler):
         matters — the engine must see "no current reader" before the
         new getstream invalidates the previous session slot.
         """
-        # Strip any query string (mpegts.js appends a cache-buster).
-        cid = tail.split("?", 1)[0].split("/", 1)[0].lower()
+        parts = tail.split("?", 1)
+        cid = parts[0].split("/", 1)[0].lower()
         if not HEX40.match(cid):
             return self._error(400, "expected /api/stream/proxy/<40 hex chars>")
+
+        # Parse optional GPU acceleration params appended by the frontend.
+        gpu_settings: "dict | None" = None
+        if len(parts) > 1:
+            qs = urllib.parse.parse_qs(parts[1])
+            backend = qs.get("gpu_backend", [""])[0]
+            if backend in ("nvidia", "vaapi", "qsv"):
+                gpu_settings = {
+                    "backend": backend,
+                    "encode":      qs.get("gpu_enc",  [""])[0] == "1",
+                    "deinterlace": qs.get("gpu_dei",  [""])[0] == "1",
+                }
+                scale_str = qs.get("gpu_scale", [""])[0]
+                if scale_str.isdigit() and int(scale_str) > 0:
+                    gpu_settings["scale"] = int(scale_str)
+                _log("proxy", "gpu params parsed: %s", gpu_settings)
+            elif backend:
+                _log("proxy", "unknown gpu_backend %r — ignored, using CPU", backend)
 
         # Terminate the prior ffmpeg (if any). Its stdout EOFs, its
         # handler thread exits its pipe loop. We do this BEFORE
@@ -925,7 +1053,22 @@ class Handler(http.server.BaseHTTPRequestHandler):
         # so we can post-mortem on unexpected exits (engine hung up,
         # decoder hiccup, etc.). The drain prevents the OS pipe buffer
         # filling and back-pressuring ffmpeg into a hang.
-        cmd = self._ffmpeg_cmd(playback_url)
+        cmd = self._ffmpeg_cmd(playback_url, gpu_settings)
+        # VA-API: set LIBVA_DRIVER_NAME so libva doesn't have to guess.
+        # The broker probes vainfo on the host at startup and returns the
+        # driver name (e.g. "radeonsi" for AMD). Without this hint, libva
+        # auto-detection can fail inside the container even when the
+        # Mesa driver is present.
+        ffmpeg_env = None
+        if gpu_settings and gpu_settings.get("backend") in ("vaapi", "qsv"):
+            driver = ((self._gpu_caps or {}).get("vaapi") or {}).get("driver")
+            if driver:
+                ffmpeg_env = {
+                    **os.environ,
+                    "LIBVA_DRIVER_NAME": driver,
+                    "MESA_SHADER_CACHE_DIR": "/tmp",
+                }
+                _log("proxy", "setting LIBVA_DRIVER_NAME=%s for ffmpeg", driver)
         try:
             proc = subprocess.Popen(
                 cmd,
@@ -933,6 +1076,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 start_new_session=True,
+                env=ffmpeg_env,
             )
         except FileNotFoundError:
             _log("proxy", "ffmpeg not installed — required for in-browser playback")
@@ -975,7 +1119,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.send_header("Connection", "close")
         self.end_headers()
 
-        _log("proxy", "streaming cid=%s… (ffmpeg pid=%d)", cid[:8], proc.pid)
+        if gpu_settings:
+            _log("proxy", "streaming cid=%s… (ffmpeg pid=%d, gpu=%s)",
+                 cid[:8], proc.pid, gpu_settings)
+        else:
+            _log("proxy", "streaming cid=%s… (ffmpeg pid=%d)", cid[:8], proc.pid)
         # Observability: track how much we've sent and emit a heartbeat
         # every minute, so a stream that quietly degrades (engine peer
         # loss, swarm thinning) shows up in the log before it dies.
@@ -1234,7 +1382,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             # <link rel=icon> already points at /static/favicon.ico.
             return self._handle_static("favicon.ico")
         elif path.startswith("/api/stream/proxy/"):
-            return self._handle_stream_proxy(path[len("/api/stream/proxy/"):])
+            return self._handle_stream_proxy(self.path[len("/api/stream/proxy/"):])
         elif path == "/api/engine/image":
             if not self.image_mgr:
                 return self._error(404, "image management disabled")
@@ -1587,6 +1735,7 @@ def main(argv: list[str] | None = None) -> int:
     Handler.desktop_entry = DesktopBrokerClient(
         broker, host=args.host, port=args.port,
     )
+    Handler.gpu_client = GpuBrokerClient(broker)
     Handler.image_mgr = ImageBrokerClient(broker)
     Handler.players_client = PlayersBrokerClient(broker)
     Handler.browsers_client = BrowsersBrokerClient(broker)
@@ -1605,6 +1754,7 @@ def main(argv: list[str] | None = None) -> int:
         config_dir=Handler.config_dir,
         db_path=Handler.db_path,
         engine_mgr=Handler.engine_mgr,
+        gpu_client=Handler.gpu_client,
         image_mgr=Handler.image_mgr,
         players_client=Handler.players_client,
         browsers_client=Handler.browsers_client,
@@ -1627,6 +1777,15 @@ def main(argv: list[str] | None = None) -> int:
     # streams play, some don't — depends on source GOP shape).
     Handler._detect_ffmpeg_capabilities()
     Handler._detect_container_runtime()
+    try:
+        Handler._gpu_caps = Handler.gpu_client.status()
+        _log("gpu", "caps: nvidia=%s vaapi=%s qsv=%s",
+             bool(Handler._gpu_caps.get("nvidia")),
+             bool(Handler._gpu_caps.get("vaapi")),
+             Handler._gpu_caps.get("qsv", False))
+    except Exception as e:
+        _log("gpu", "capability probe failed: %s", e)
+        Handler._gpu_caps = {}
 
     if Handler.config.get("engine_autostart") and not Handler.engine_mgr.probe(timeout=2):
         print("  engine_autostart=on; starting container...", flush=True)

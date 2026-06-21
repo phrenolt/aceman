@@ -158,6 +158,7 @@ class RegistryShapeTests(unittest.TestCase):
         expected = {
             "engine.status", "engine.logs", "engine.start",
             "engine.stop", "engine.restart",
+            "gpu.status",
             "image.status", "image.install", "image.remove",
             "players.list", "player.stop",
             "browsers.list", "browser.spawn",

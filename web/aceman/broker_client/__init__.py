@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from .base import BrokerClient, BrokerError
 from .engine import EngineBrokerClient
+from .gpu import GpuBrokerClient
 from .image import ImageBrokerClient
 from .players import PlayersBrokerClient
 from .browsers import BrowsersBrokerClient
@@ -16,7 +17,7 @@ from .desktop import DesktopBrokerClient
 
 __all__ = [
     "BrokerClient", "BrokerError",
-    "EngineBrokerClient", "ImageBrokerClient",
+    "EngineBrokerClient", "GpuBrokerClient", "ImageBrokerClient",
     "PlayersBrokerClient", "BrowsersBrokerClient",
     "DesktopBrokerClient",
 ]
