@@ -246,6 +246,46 @@
     </div>
   </div>
 
+  <div class="card has-card-label" id="gpu-card" style="display:none">
+    <span class="card-label">GPU Acceleration</span>
+    <p style="font-size:.82rem;color:var(--mut);margin:.1rem 0 .7rem">
+      In-browser player only. Requires GPU device passthrough to the web container.
+    </p>
+    <div id="gpu-unavailable" style="display:none">
+      <span class="gate-hint">No compatible GPU detected — nvidia-smi and VA-API both absent.</span>
+    </div>
+    <div id="gpu-controls" style="display:none">
+      <div class="field">
+        <span class="field-label">Backend</span>
+        <span id="gpu-backend-label" class="status"></span>
+      </div>
+      <div class="field">
+        <label style="display:flex;align-items:center;gap:.5rem;cursor:pointer">
+          <input type="checkbox" id="gpu-encode">
+          GPU encode
+          <span style="color:var(--mut);font-size:.8rem">(replaces libx264 — lower CPU, same quality)</span>
+        </label>
+      </div>
+      <div class="field">
+        <label style="display:flex;align-items:center;gap:.5rem;cursor:pointer">
+          <input type="checkbox" id="gpu-deinterlace">
+          Deinterlace on GPU
+          <span style="color:var(--mut);font-size:.8rem">(replaces CPU yadif)</span>
+        </label>
+      </div>
+      <div class="field">
+        <span class="field-label">Upscale to</span>
+        <select id="gpu-upscale">
+          <option value="">Off</option>
+          <option value="1080">1080p</option>
+          <option value="2160">4K</option>
+        </select>
+        <span class="field-suffix" id="gpu-upscale-note" style="display:none">720p→1080p is real-time; 1080p→4K is not</span>
+      </div>
+    </div>
+    <div class="gate-hint" id="gpu-hint" style="margin-top:.3rem"></div>
+  </div>
+
   <div class="card has-card-label" id="setup-card">
     <span class="card-label">Setup &amp; tools</span>
 

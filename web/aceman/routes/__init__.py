@@ -19,6 +19,7 @@ def register_all(router: Router) -> None:
         desktop_routes,
         engine_routes,
         favourites,
+        gpu,
         heartbeat as hb,
         logs,
         players,
@@ -30,6 +31,7 @@ def register_all(router: Router) -> None:
     desktop_routes.register(router)
     engine_routes.register(router)
     favourites.register(router)
+    gpu.register(router)
     hb.register(router)
     logs.register(router)
     players.register(router)

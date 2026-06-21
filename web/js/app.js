@@ -517,6 +517,102 @@ function clearNowPlaying() {
   refreshPlaybackMoveButton();
 }
 
+// ---- GPU Acceleration card ---------------------------------------------
+
+let _gpuCaps = null;  // populated by initGpuCard() at startup
+
+function _loadGpuSettings() {
+  try {
+    return JSON.parse(localStorage.getItem(KEYS.GPU_ACCEL) || '{}');
+  } catch (_) { return {}; }
+}
+
+function _saveGpuSettings(s) {
+  localStorage.setItem(KEYS.GPU_ACCEL, JSON.stringify(s));
+}
+
+// Returns query-string fragment (e.g. "&gpu_backend=nvidia&gpu_enc=1")
+// to append to the proxy URL. Empty string when nothing is enabled.
+function buildGpuParams() {
+  if (!_gpuCaps || !_gpuCaps.available) return '';
+  const s = _loadGpuSettings();
+  if (!s.encode && !s.deinterlace && !s.scale) return '';
+  const backend = _gpuCaps.nvidia ? 'nvidia'
+                : _gpuCaps.vaapi  ? (_gpuCaps.qsv ? 'qsv' : 'vaapi')
+                : null;
+  if (!backend) return '';
+  const h264Ok = _gpuCaps.nvidia || (_gpuCaps.vaapi && _gpuCaps.vaapi.h264_enc);
+  let p = `&gpu_backend=${backend}`;
+  if (s.encode && h264Ok) p += '&gpu_enc=1';
+  if (s.deinterlace)      p += '&gpu_dei=1';
+  if (s.scale)       p += `&gpu_scale=${s.scale}`;
+  return p;
+}
+
+async function initGpuCard() {
+  let caps;
+  try {
+    caps = await api('/api/gpu/status');
+  } catch (_) { return; }
+  _gpuCaps = caps;
+
+  const card = $('gpu-card');
+  if (!card) return;
+  card.style.display = '';
+
+  if (!caps.available) {
+    $('gpu-unavailable').style.display = '';
+    return;
+  }
+
+  $('gpu-controls').style.display = '';
+
+  // Label the detected backend.
+  const backendLabel = $('gpu-backend-label');
+  if (caps.nvidia) {
+    backendLabel.textContent = 'NVIDIA — ' + caps.nvidia.name;
+  } else if (caps.vaapi) {
+    backendLabel.textContent = caps.qsv ? 'Intel QSV (VA-API)' : 'VA-API';
+  }
+
+  // VA-API: if h264_enc is false, vainfo is missing or the driver doesn't
+  // report H.264 encode support. Disable encode + warn; filters (deinterlace,
+  // scale) still work independently via the vaapi filter chain.
+  const h264Ok = caps.nvidia || (caps.vaapi && caps.vaapi.h264_enc);
+  const encodeEl = $('gpu-encode');
+  if (!h264Ok) {
+    encodeEl.disabled = true;
+    $('gpu-hint').textContent =
+      'GPU encode unavailable — install libva-utils + mesa-va-drivers and confirm ' +
+      'vainfo shows VAEntrypointEncSlice for H.264.';
+  }
+
+  // Restore saved settings.
+  const s = _loadGpuSettings();
+  encodeEl.checked             = !!s.encode && h264Ok;
+  $('gpu-deinterlace').checked = !!s.deinterlace;
+  $('gpu-upscale').value       = s.scale || '';
+  _refreshUpscaleNote();
+
+  // Persist on change.
+  const persist = () => {
+    _saveGpuSettings({
+      encode:      $('gpu-encode').checked,
+      deinterlace: $('gpu-deinterlace').checked,
+      scale:       $('gpu-upscale').value,
+    });
+    _refreshUpscaleNote();
+  };
+  $('gpu-encode').onchange      = persist;
+  $('gpu-deinterlace').onchange = persist;
+  $('gpu-upscale').onchange     = persist;
+}
+
+function _refreshUpscaleNote() {
+  const note = $('gpu-upscale-note');
+  if (note) note.style.display = $('gpu-upscale').value ? '' : 'none';
+}
+
 // ---- in-browser playback (mpegts.js + /api/stream/proxy) ---------------
 //
 // The library transmuxes MPEG-TS chunks into fMP4 and feeds them into a
@@ -564,7 +660,7 @@ function startInBrowserPlayback(cid) {
 
   // Cache-buster query so the browser never serves a stale-cached body
   // for the proxy URL (we send no-store but belt + braces).
-  const url = '/api/stream/proxy/' + cid + '?t=' + Date.now();
+  const url = '/api/stream/proxy/' + cid + '?t=' + Date.now() + buildGpuParams();
   // Pre-roll buffer (Player card slider): 0 = off / play at the live
   // edge as before; >0 = hold playback back by that many seconds for a
   // hiccup cushion. Read once, at play time.
@@ -574,6 +670,18 @@ function startInBrowserPlayback(cid) {
   // with "Playing — …" before the cushion is built.
   let buffering = bufferSecs > 0;
   let mediaInfoText = '';
+  let speedMbps = null;
+  // Encode path label shown in the status line — computed once at play
+  // time from the GPU settings so it reflects what was actually sent.
+  const _gs = _loadGpuSettings();
+  const _h264Ok = _gpuCaps && (_gpuCaps.nvidia || (_gpuCaps.vaapi && _gpuCaps.vaapi.h264_enc));
+  const _gpuBackend = _gpuCaps && _gpuCaps.nvidia ? 'nvidia' : _gpuCaps && _gpuCaps.vaapi ? 'vaapi' : null;
+  const encodeLabel = (_gpuBackend && _gs.encode && _h264Ok)
+    ? (_gpuBackend === 'nvidia' ? 'NVENC' : 'VA-API')
+    : 'CPU';
+  let currentFps = null;
+  let _lastFrames = null;
+  let _lastFrameTime = null;
   const playerCfg = { type: 'mpegts', isLive: true, url };
   if (bufferSecs > 0) {
     // Stop mpegts.js seeking to the live edge — that chasing would
@@ -607,6 +715,20 @@ function startInBrowserPlayback(cid) {
       // buffer figure; it no-ops while the pre-roll counter is up.
       renderStatus();
     });
+    mpegtsPlayer.on(E.STATISTICS_INFO, (stats) => {
+      if (!stats) return;
+      if (stats.speed != null)
+        speedMbps = stats.speed * 8 / 1024;  // KB/s → Mbps
+      if (stats.decodedFrames != null) {
+        const now = performance.now();
+        if (_lastFrames !== null && _lastFrameTime !== null) {
+          const dt = (now - _lastFrameTime) / 1000;
+          if (dt > 0) currentFps = (stats.decodedFrames - _lastFrames) / dt;
+        }
+        _lastFrames = stats.decodedFrames;
+        _lastFrameTime = now;
+      }
+    });
     mpegtsPlayer.on(E.ERROR, (type, detail) => {
       // Freeze the line on the error — stop the health ticker from
       // overwriting it with the next "· buffer" refresh.
@@ -617,6 +739,11 @@ function startInBrowserPlayback(cid) {
       status.className = 'gate-hint warn';
     });
   }
+
+  v.addEventListener('waiting',  _armStall);
+  v.addEventListener('stalled',  _armStall);
+  v.addEventListener('playing',  _clearStall);
+  v.addEventListener('canplay',  _clearStall);
 
   mpegtsPlayer.attachMediaElement(v);
   mpegtsPlayer.load();
@@ -638,7 +765,10 @@ function startInBrowserPlayback(cid) {
     if (buffering) return;            // pre-roll counter owns the line until release
     const base = mediaInfoText || 'Playing';
     const ahead = bufferedAhead(v.buffered, v.currentTime);
-    status.textContent = base + ' · buffer ' + ahead.toFixed(1) + ' s';
+    const mbps = speedMbps != null ? ' · ' + speedMbps.toFixed(1) + ' Mbps' : '';
+    const fps  = currentFps != null ? ' · ' + Math.round(currentFps) + ' fps' : '';
+    const res  = v.videoWidth  ? ' · ' + v.videoWidth + '×' + v.videoHeight : '';
+    status.textContent = base + ' · buffer ' + ahead.toFixed(1) + ' s' + mbps + fps + res + ' · ' + encodeLabel;
     status.className = 'gate-hint';
   };
   const beginPlayback = () => {
@@ -665,6 +795,24 @@ function startInBrowserPlayback(cid) {
 // status line during playback. Module-level so Stop / a fresh Play /
 // a stream error can clear it (otherwise it'd keep painting over them).
 let _bufferHealthTimer = null;
+
+// Stall watchdog: if the video enters "waiting" for 8 s without recovering
+// (ffmpeg died, proxy dropped), show an error instead of spinning forever.
+let _stallTimer = null;
+function _clearStall() {
+  if (!_stallTimer) return;
+  clearTimeout(_stallTimer);
+  _stallTimer = null;
+}
+function _armStall() {
+  if (_stallTimer) return;
+  _stallTimer = setTimeout(() => {
+    _stallTimer = null;
+    _stopBufferHealth();
+    const s = $('pb-video-status');
+    if (s) { s.textContent = 'Stream stalled — proxy disconnected or stream ended'; s.className = 'gate-hint warn'; }
+  }, 8000);
+}
 
 function _stopBufferHealth() {
   if (!_bufferHealthTimer) return;
@@ -731,6 +879,7 @@ function stopInBrowserPlayback() {
   // before tearing the player down.
   _cancelPreRoll();
   _stopBufferHealth();
+  _clearStall();
   if (mpegtsPlayer) {
     try { mpegtsPlayer.pause(); } catch (_) {}
     try { mpegtsPlayer.unload(); } catch (_) {}
@@ -1112,6 +1261,41 @@ async function waitForEngineReady(msg, timeoutMs = 90_000) {
     }
     return false;
   } finally { hideBusy(); }
+}
+
+// Cold-start gate. Launched from the desktop entry, the browser opens
+// (and the static page paints) a beat before the web backend is
+// accepting connections — the wrapper may still be (re)creating the
+// --rm web container. The first /api/* fetch then rejects with a bare
+// NetworkError (no .status) and the user lands on a live-looking page
+// behind a "Could not contact backend" line. Hold behind the busy
+// modal and retry until the server answers.
+//
+// Retries ONLY on connection-level failures. An error carrying a
+// .status means the server DID respond (some real HTTP error) — that's
+// not a "still booting" case, so we surface it rather than spin.
+// Returns true once reachable, false if the deadline passes first.
+async function waitForBackend(msg, timeoutMs = 90_000) {
+  const deadline = Date.now() + timeoutMs;
+  let shown = false;
+  try {
+    for (;;) {
+      try {
+        await api('/api/storage-mode');
+        return true;
+      } catch (e) {
+        if (e && e.status !== undefined) throw e;   // reachable, real error
+        if (Date.now() >= deadline) return false;
+        if (!shown) {
+          showBusy(msg || 'Please wait while Aceman is getting ready…');
+          shown = true;
+        }
+        await new Promise(r => setTimeout(r, 500));
+      }
+    }
+  } finally {
+    if (shown) hideBusy();
+  }
 }
 
 function refreshPlayButton() {
@@ -1919,6 +2103,13 @@ async function toggleDesktopEntry() {
   // generic "This browser tab" label and doesn't filter same-name
   // entries, then re-renders a beat later when detection resolves.
   await detectCurrentBrowser();
+  // Hold behind the "please wait" modal until the web backend is
+  // actually answering — otherwise a desktop-entry cold start drops the
+  // user onto a fully-interactive page behind a bare NetworkError while
+  // the server is still coming up. Once this returns true the calls
+  // below succeed immediately; the timeout path falls through to the
+  // existing catch, which paints the actionable error.
+  await waitForBackend();
   try {
     const cfg = await api('/api/storage-mode');
     mode = cfg.mode;
@@ -1978,6 +2169,7 @@ async function toggleDesktopEntry() {
   await loadFavs();
   await loadPlayers();
   await loadBrowsers();
+  initGpuCard();  // fire-and-forget; card appears when broker responds
   // Replace the native <select> popup with our fully-CSS-styled
   // dropdown — Firefox/Linux otherwise renders the option highlight
   // as a system purple no amount of CSS can override.
@@ -2253,7 +2445,7 @@ async function toggleDesktopEntry() {
       const r = await api('/api/logs?lines=300&kind=' + encodeURIComponent(activeLogsKind));
       const wasAtBottom = logsViewer.scrollHeight - logsViewer.scrollTop
                           - logsViewer.clientHeight < 30;
-      logsViewer.textContent = r.tail || '(log is empty — no activity yet)';
+      logsViewer.textContent = (r.tail || '(log is empty — no activity yet)').replace(/\\u000a/g, '\n');
       if (wasAtBottom) logsViewer.scrollTop = logsViewer.scrollHeight;
       const kb = (r.size_bytes / 1024).toFixed(1);
       status.textContent = r.available ? `${kb} KB` : '(no log)';

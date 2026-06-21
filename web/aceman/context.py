@@ -25,6 +25,7 @@ from .broker_client import (
     BrowsersBrokerClient,
     DesktopBrokerClient,
     EngineBrokerClient,
+    GpuBrokerClient,
     ImageBrokerClient,
     PlayersBrokerClient,
 )
@@ -42,6 +43,7 @@ class RouteContext:
     config_dir: Optional[pathlib.Path] = None
     db_path: Optional[pathlib.Path] = None
     engine_mgr: Optional[EngineBrokerClient] = None
+    gpu_client: Optional[GpuBrokerClient] = None
     image_mgr: Optional[ImageBrokerClient] = None
     players_client: Optional[PlayersBrokerClient] = None
     browsers_client: Optional[BrowsersBrokerClient] = None
