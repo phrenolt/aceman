@@ -1178,28 +1178,6 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     "MESA_SHADER_CACHE_DIR": "/tmp",
                 }
                 _log("proxy", "setting LIBVA_DRIVER_NAME=%s for ffmpeg", driver)
-        try:
-            proc = subprocess.Popen(
-                cmd,
-                stdin=subprocess.DEVNULL,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                start_new_session=True,
-                env=ffmpeg_env,
-            )
-        except FileNotFoundError:
-            _log("proxy", "ffmpeg not installed — required for in-browser playback")
-            return self._error(
-                503,
-                "ffmpeg is not installed on the host. In-browser playback "
-                "requires it for stream remuxing. Install via your package "
-                "manager (e.g. dnf install ffmpeg-free / apt install ffmpeg) "
-                "and retry, or use the external player.")
-
-        # Drain ffmpeg's stderr into a bounded deque on a daemon thread.
-        # Keeping the last ~80 lines is enough for a useful post-mortem
-        # without burning memory if ffmpeg gets chatty mid-stream.
-        stderr_tail: "collections.deque[str]" = collections.deque(maxlen=80)
         def _drain_ffmpeg_stderr(stream, sink):
             try:
                 for raw in iter(stream.readline, b""):
@@ -1208,19 +1186,84 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     sink.append(raw.rstrip().decode("utf-8", errors="replace"))
             except (OSError, ValueError):
                 pass
-        threading.Thread(
-            target=_drain_ffmpeg_stderr,
-            args=(proc.stderr, stderr_tail),
-            daemon=True,
-        ).start()
+
+        # Spawn ffmpeg, waiting up to _FFMPEG_STARTUP_SECS for the first
+        # byte before committing the HTTP 200.  If it crashes immediately
+        # (GPU driver init failure, engine not ready yet) we retry up to
+        # _FFMPEG_MAX_RETRIES times with a short pause in between so the
+        # acestream engine has time to buffer.  Headers are only sent once
+        # we have a live byte — a 503 is still possible if all retries fail.
+        _FFMPEG_STARTUP_SECS = 4.0
+        _FFMPEG_MAX_RETRIES  = 2
+        import select as _select
+
+        proc       = None
+        first_chunk = b""
+        stderr_tail: "collections.deque[str]" = collections.deque(maxlen=80)
+
+        for attempt in range(1, _FFMPEG_MAX_RETRIES + 2):
+            if proc is not None:
+                Handler._kill_proc(proc)
+                proc = None
+            if attempt > 1:
+                _log("proxy", "attempt %d/%d: pausing %.1fs for engine to buffer…",
+                     attempt, _FFMPEG_MAX_RETRIES + 1, attempt * 1.5)
+                time.sleep(attempt * 1.5)
+
+            try:
+                proc = subprocess.Popen(
+                    cmd,
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    start_new_session=True,
+                    env=ffmpeg_env,
+                )
+            except FileNotFoundError:
+                _log("proxy", "ffmpeg not installed — required for in-browser playback")
+                return self._error(
+                    503,
+                    "ffmpeg is not installed on the host. In-browser playback "
+                    "requires it for stream remuxing. Install via your package "
+                    "manager (e.g. dnf install ffmpeg-free / apt install ffmpeg) "
+                    "and retry, or use the external player.")
+
+            attempt_stderr: "collections.deque[str]" = collections.deque(maxlen=80)
+            threading.Thread(
+                target=_drain_ffmpeg_stderr,
+                args=(proc.stderr, attempt_stderr),
+                daemon=True,
+            ).start()
+
+            # Wait up to _FFMPEG_STARTUP_SECS for the first byte.
+            deadline = time.monotonic() + _FFMPEG_STARTUP_SECS
+            crashed  = False
+            while time.monotonic() < deadline:
+                ready, _, _ = _select.select([proc.stdout], [], [], 0.1)
+                if ready:
+                    first_chunk = proc.stdout.read(self._PROXY_CHUNK) or b""
+                    break
+                rc = proc.poll()
+                if rc is not None and rc != 0:
+                    crashed = True
+                    _log("proxy",
+                         "attempt %d/%d: ffmpeg exited rc=%s with 0 bytes — %s",
+                         attempt, _FFMPEG_MAX_RETRIES + 1, rc,
+                         "retrying" if attempt <= _FFMPEG_MAX_RETRIES else "giving up")
+                    break
+
+            stderr_tail = attempt_stderr
+            if first_chunk or not crashed:
+                break  # alive (has data, or slow-starting but not crashed)
+
+        if proc is None:
+            return self._error(503, "Stream proxy failed to start")
 
         with Handler._active_lock:
             Handler._active_proc = proc
             Handler._active_command_url = command_url
 
-        # Send headers to the browser. video/mp2t matches mpegts.js'
-        # type='mpegts' input expectation. No Content-Length — it's a
-        # live stream; we close the connection at end-of-stream.
+        # Headers committed only after ffmpeg is confirmed alive.
         self.send_response(200)
         self.send_header("Content-Type", "video/mp2t")
         self.send_header("Cache-Control", "no-store, no-transform")
@@ -1242,6 +1285,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
         end_reason = "unknown"
         try:
             assert proc.stdout is not None
+            # Flush the probe chunk that was read before headers were sent.
+            if first_chunk:
+                try:
+                    self.wfile.write(first_chunk)
+                    bytes_sent += len(first_chunk)
+                except (BrokenPipeError, ConnectionResetError, OSError):
+                    end_reason = "browser disconnected at first chunk"
             while True:
                 try:
                     chunk = proc.stdout.read(self._PROXY_CHUNK)
