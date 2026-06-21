@@ -1306,6 +1306,23 @@ function refreshPlayButton() {
   btn.title = v.title;
   btn.setAttribute('aria-label', v.ariaLabel);
   btn.classList.toggle('playing', v.playingClass);
+  const rbtn = $('restream-btn');
+  if (rbtn) rbtn.style.display = livePlaybackTarget === 'browser' ? '' : 'none';
+}
+
+async function restartStream() {
+  if (!current) return;
+  const cid = current.cid;
+  showBusy('Restarting…');
+  try {
+    stopInBrowserPlayback();
+    try { await api('/api/player/stop', { method: 'POST', body: '{}' }); }
+    catch (_) { /* best-effort */ }
+    $('cid-input').value = cid;
+    await play({ name: current.name });
+  } finally {
+    hideBusy();
+  }
 }
 
 function refreshPlaybackMoveButton() {
@@ -2193,6 +2210,8 @@ async function toggleDesktopEntry() {
    // the stop state tears down everything: in-browser proxy if any,
    // and any host-side wrapper holding mpv/vlc. The fav touch flow is
    // play()'s responsibility, not stop's.
+  $('restream-btn').onclick = () => restartStream();
+
   $('play-btn').onclick = async () => {
     if (livePlaybackTarget) {
       showBusy('Stopping…');
