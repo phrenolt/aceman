@@ -810,6 +810,72 @@ class Handler(http.server.BaseHTTPRequestHandler):
     # h264_vaapi GOP: drop -sc_threshold (libx264-only; causes a warning with vaapi).
     _FFMPEG_GOP_VAAPI = ["-g", "50", "-keyint_min", "50", "-bf", "0"]
 
+    # FSRCNNX 2x neural upscale shader (mpv GLSL hook format).
+    # Baked into the container image by Containerfile.web.
+    _FSRCNNX_SHADER = "/usr/local/share/aceman/shaders/FSRCNNX_x2_16-0-4-1.glsl"
+
+    @classmethod
+    def _probe_src_dims(cls, url: str) -> "tuple[int,int] | None":
+        """ffprobe the first video stream to get width × height.
+
+        Used to prescale-lock dimensions before libplacebo so the Vulkan
+        context never needs to reinitialize when corrupt acestream packets
+        cause the decoder to briefly emit frames with different dimensions.
+        """
+        import subprocess as _sp
+        try:
+            r = _sp.run(
+                ["ffprobe", "-v", "quiet",
+                 "-analyzeduration", "3000000", "-probesize", "3000000",
+                 "-select_streams", "v:0",
+                 "-show_entries", "stream=width,height",
+                 "-of", "csv=p=0", url],
+                capture_output=True, text=True, timeout=10,
+            )
+            if r.returncode == 0 and r.stdout.strip():
+                w, h = r.stdout.strip().splitlines()[0].split(",")
+                return (int(w) // 2) * 2, (int(h) // 2) * 2
+        except Exception:
+            pass
+        return None
+
+    @classmethod
+    def _libplacebo_scale(cls, src_w: "int|None", src_h: "int|None",
+                          out_h: int) -> list:
+        """Build libplacebo filter nodes for GPU upscaling.
+
+        Prescales to (src_w, src_h) first so libplacebo always sees fixed
+        dimensions — prevents mid-stream Vulkan context reinit on corrupt input.
+
+        Uses FSRCNNX_x2 neural shader if present and the target is exactly
+        2× the source; otherwise falls back to ewa_lanczos (high-quality
+        Lanczos, equivalent to what mpv uses by default).
+        """
+        import os as _os
+        nodes = []
+        if src_w and src_h:
+            nodes.append(f"scale={src_w}:{src_h}")
+        nodes.append("format=yuv420p")
+
+        use_fsrcnnx = (
+            src_w and src_h
+            and src_h * 2 == out_h
+            and _os.path.exists(cls._FSRCNNX_SHADER)
+        )
+        if use_fsrcnnx:
+            nodes.append(
+                f"libplacebo=w={src_w * 2}:h={out_h}"
+                f":custom_shader_path={cls._FSRCNNX_SHADER}"
+                f":disable_builtin=true"
+            )
+            _log("proxy", "scale: FSRCNNX_x2 neural shader (%dx%d → %dx%d)",
+                 src_w, src_h, src_w * 2, out_h)
+        else:
+            nodes.append(f"libplacebo=w=-2:h={out_h}:upscaler=ewa_lanczos")
+            _log("proxy", "scale: libplacebo ewa_lanczos → %dp%s",
+                 out_h, " (FSRCNNX not available)" if not _os.path.exists(cls._FSRCNNX_SHADER) else "")
+        return nodes
+
     @classmethod
     def _ffmpeg_cmd(cls, playback_url: str, gpu: "dict | None" = None) -> list:
         """Dispatch to the appropriate ffmpeg command builder.
@@ -870,13 +936,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
     @classmethod
     def _nvidia_cmd(cls, playback_url: str, gpu: dict) -> list:
-        """NVIDIA path: software decode → optional yadif/libplacebo (CPU/Vulkan)
+        """NVIDIA path: software decode → yadif → libplacebo Vulkan upscale
         → h264_nvenc encode.
 
-        Same stall fix as _vaapi_cmd: -hwaccel cuda with scale_npp causes
-        identical CPU-frame-into-CUDA-filter stalls on corrupt acestream input.
-        libplacebo (Vulkan, works on NVIDIA) upscales with CPU frames in/out;
-        h264_nvenc accepts CPU frames natively so no hwupload step needed.
+        h264_nvenc accepts CPU frames natively — no hwupload step needed.
         """
         do_enc = gpu.get("encode", False)
         do_dei = gpu.get("deinterlace", False)
@@ -893,7 +956,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if do_dei:
             filters.append("yadif")
         if scale_h:
-            filters.append(f"scale=-2:{scale_h}")
+            src = cls._probe_src_dims(playback_url)
+            src_w, src_h = src if src else (None, None)
+            filters.extend(cls._libplacebo_scale(src_w, src_h, scale_h))
 
         if do_enc:
             video = (["-vf", ",".join(filters)] if filters else []) + [
@@ -909,16 +974,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
     @classmethod
     def _vaapi_cmd(cls, playback_url: str, gpu: dict) -> list:
-        """VA-API path: software decode → optional yadif/libplacebo (CPU/Vulkan)
+        """VA-API path: software decode → yadif → libplacebo Vulkan upscale
         → format=nv12,hwupload → h264_vaapi encode.
 
-        scale_vaapi stalls the pipeline when the software h264 decoder emits
-        'no frame!' on corrupt acestream packets: the VAAPI filter expects a
-        GPU surface but receives nothing, blocking the muxer.
-
-        libplacebo (Vulkan, spline36) handles upscaling with CPU-format frames
-        in and CPU-format frames out — missing frames simply produce no output
-        and never stall the VAAPI encode stage downstream.
+        CPU prescale before libplacebo locks source dimensions so the Vulkan
+        context never reinitializes when corrupt acestream packets cause the
+        decoder to briefly emit frames with different dimensions.
         """
         do_enc = gpu.get("encode", False)
         do_dei = gpu.get("deinterlace", False)
@@ -934,17 +995,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
             "-i", playback_url,
         ]
 
-        # CPU-side filters: dropped/corrupt frames produce no output and never
-        # reach the VAAPI upload stage.  libplacebo (Vulkan) was attempted for
-        # GPU-accelerated upscale but fails mid-stream when corrupt acestream
-        # packets trigger a decoder reset that changes output dimensions —
-        # libplacebo's Vulkan context can't reinitialize on the fly.  CPU scale
-        # (libswscale) handles arbitrary dimension/format changes gracefully.
         filters = []
         if do_dei:
             filters.append("yadif")
         if scale_h:
-            filters.append(f"scale=-2:{scale_h}")
+            src = cls._probe_src_dims(playback_url)
+            src_w, src_h = src if src else (None, None)
+            filters.extend(cls._libplacebo_scale(src_w, src_h, scale_h))
 
         if do_enc:
             filters.extend(["format=nv12", "hwupload"])
