@@ -870,47 +870,40 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
     @classmethod
     def _nvidia_cmd(cls, playback_url: str, gpu: dict) -> list:
-        """NVIDIA path: NVDEC decode → CUDA filters → NVENC encode.
+        """NVIDIA path: software decode → optional yadif/libplacebo (CPU/Vulkan)
+        → h264_nvenc encode.
 
-        All processing stays on the GPU. Falls back to libx264 if the
-        caller enabled filters but not NVENC (rare; avoids a dead end).
+        Same stall fix as _vaapi_cmd: -hwaccel cuda with scale_npp causes
+        identical CPU-frame-into-CUDA-filter stalls on corrupt acestream input.
+        libplacebo (Vulkan, works on NVIDIA) upscales with CPU frames in/out;
+        h264_nvenc accepts CPU frames natively so no hwupload step needed.
         """
         do_enc = gpu.get("encode", False)
         do_dei = gpu.get("deinterlace", False)
-        scale_h = gpu.get("scale")  # int height or None
+        scale_h = gpu.get("scale")
 
         pre = [
             "ffmpeg", "-hide_banner", "-loglevel", "warning",
             "-fflags", "+nobuffer+discardcorrupt", "-err_detect", "ignore_err",
             "-flush_packets", "1",
-            "-hwaccel", "cuda", "-hwaccel_output_format", "cuda",
             "-i", playback_url,
         ]
 
         filters = []
         if do_dei:
-            filters.append("yadif_cuda")
+            filters.append("yadif")
         if scale_h:
-            filters.append(f"scale_npp=-2:{scale_h}:interp_algo=super")
+            filters.append(f"libplacebo=w=-2:h={scale_h}:upscaler=spline36")
 
         if do_enc:
-            vf = (["-vf", ",".join(filters)] if filters else [])
-            video = vf + [
-                "-c:v", "h264_nvenc",
-                "-preset", "p1", "-tune", "ll",
+            video = (["-vf", ",".join(filters)] if filters else []) + [
+                "-c:v", "h264_nvenc", "-preset", "p1", "-tune", "ll",
             ] + cls._FFMPEG_GOP
         else:
-            # Filters without NVENC: download back to system memory.
-            dl = filters + ["hwdownload", "format=nv12"] if filters else []
-            vf = (["-vf", ",".join(dl)] if dl else [])
-            if cls._ffmpeg_has_h264_decoder:
-                video = vf + [
-                    "-c:v", "libx264",
-                    "-preset", "ultrafast", "-tune", "zerolatency",
-                    "-pix_fmt", "yuv420p",
-                ] + cls._FFMPEG_GOP
-            else:
-                video = ["-c:v", "copy"]
+            sw = (["-c:v", "libx264", "-preset", "ultrafast",
+                   "-tune", "zerolatency", "-pix_fmt", "yuv420p"] + cls._FFMPEG_GOP
+                  if cls._ffmpeg_has_h264_decoder else ["-c:v", "copy"])
+            video = (["-vf", ",".join(filters)] if filters else []) + sw
 
         return pre + video + cls._FFMPEG_AUDIO_OUT
 
