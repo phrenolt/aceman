@@ -15,10 +15,11 @@ from __future__ import annotations
 def build_registry() -> "dict[str, callable]":
     """Lazy-build the ACTIONS dict so each submodule can be imported
     independently for tests (avoids circular import chains)."""
-    from . import engine, image, players, browsers, desktop, web_lifecycle
+    from . import engine, gpu, image, players, browsers, desktop, web_lifecycle
 
     actions: "dict[str, callable]" = {}
     engine.register(actions)
+    gpu.register(actions)
     image.register(actions)
     players.register(actions)
     browsers.register(actions)

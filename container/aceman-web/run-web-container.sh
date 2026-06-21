@@ -190,6 +190,14 @@ DETACH_REQUESTED=""
 # It can't escape to spawn host processes, can't read random $HOME
 # files, can't reach the engine's data, can't talk to anything on
 # the LAN.
+# Pass the DRI render node when it exists so ffmpeg can use VA-API for
+# GPU encode/scale/deinterlace (GPU Acceleration card). Conditional so
+# the container starts cleanly on machines without a render node.
+# --device adds only the specific node to the cgroup device whitelist;
+# it does NOT require extra capabilities and is safe alongside --cap-drop=all.
+DRI_ARGS=()
+[ -e /dev/dri/renderD128 ] && DRI_ARGS+=(--device /dev/dri/renderD128)
+
 podman run -d --rm \
     --name "$ACE_WEB_NAME" \
     --network "$ACE_NETWORK" \
@@ -200,6 +208,7 @@ podman run -d --rm \
     --read-only --tmpfs /tmp:rw,size=64m,mode=1777 \
     --memory "$ACE_WEB_MEMORY" \
     --pids-limit "$ACE_WEB_PIDS" \
+    "${DRI_ARGS[@]}" \
     -p "$ACE_WEB_HOST:$ACE_WEB_PORT:$ACE_WEB_PORT" \
     -e XDG_CONFIG_HOME=/xdg/config \
     -e XDG_CACHE_HOME=/xdg/cache \
