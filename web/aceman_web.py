@@ -893,8 +893,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if do_dei:
             filters.append("yadif")
         if scale_h:
-            filters.append("format=yuv420p")
-            filters.append(f"libplacebo=w=-2:h={scale_h}:upscaler=spline36")
+            filters.append(f"scale=-2:{scale_h}")
 
         if do_enc:
             video = (["-vf", ",".join(filters)] if filters else []) + [
@@ -935,17 +934,17 @@ class Handler(http.server.BaseHTTPRequestHandler):
             "-i", playback_url,
         ]
 
-        # CPU-side filters first: dropped/corrupt frames produce no output and
-        # never reach the VAAPI upload stage, so the pipeline keeps flowing.
+        # CPU-side filters: dropped/corrupt frames produce no output and never
+        # reach the VAAPI upload stage.  libplacebo (Vulkan) was attempted for
+        # GPU-accelerated upscale but fails mid-stream when corrupt acestream
+        # packets trigger a decoder reset that changes output dimensions —
+        # libplacebo's Vulkan context can't reinitialize on the fly.  CPU scale
+        # (libswscale) handles arbitrary dimension/format changes gracefully.
         filters = []
         if do_dei:
             filters.append("yadif")
         if scale_h:
-            # format=yuv420p pins the pixel format before libplacebo so ffmpeg
-            # never inserts an auto_scale node that fails when the h264 decoder
-            # resets its output format on corrupt input mid-stream.
-            filters.append("format=yuv420p")
-            filters.append(f"libplacebo=w=-2:h={scale_h}:upscaler=spline36")
+            filters.append(f"scale=-2:{scale_h}")
 
         if do_enc:
             filters.extend(["format=nv12", "hwupload"])
