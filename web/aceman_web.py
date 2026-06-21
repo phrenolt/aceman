@@ -916,12 +916,16 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
     @classmethod
     def _vaapi_cmd(cls, playback_url: str, gpu: dict) -> list:
-        """VA-API path (Intel / AMD): hardware H.264 decode → VAAPI filters → h264_vaapi.
+        """VA-API path: software decode → optional yadif/libplacebo (CPU/Vulkan)
+        → format=nv12,hwupload → h264_vaapi encode.
 
-        Using hardware decode (-hwaccel vaapi) keeps frames on the GPU and
-        avoids the software decoder's 'no frame!' stalls on corrupt packets
-        from acestream. VCN handles corrupt H.264 input silently rather than
-        dropping frames and starving the filter chain.
+        scale_vaapi stalls the pipeline when the software h264 decoder emits
+        'no frame!' on corrupt acestream packets: the VAAPI filter expects a
+        GPU surface but receives nothing, blocking the muxer.
+
+        libplacebo (Vulkan, spline36) handles upscaling with CPU-format frames
+        in and CPU-format frames out — missing frames simply produce no output
+        and never stall the VAAPI encode stage downstream.
         """
         do_enc = gpu.get("encode", False)
         do_dei = gpu.get("deinterlace", False)
@@ -931,35 +935,30 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
         pre = [
             "ffmpeg", "-hide_banner", "-loglevel", "warning",
+            "-vaapi_device", device,
             "-fflags", "+nobuffer+discardcorrupt", "-err_detect", "ignore_err",
-            "-hwaccel", "vaapi",
-            "-hwaccel_device", device,
-            "-hwaccel_output_format", "vaapi",
             "-flush_packets", "1",
             "-i", playback_url,
         ]
 
-        # Frames are already in VAAPI memory from hardware decode — no
-        # format=nv12,hwupload step needed.
+        # CPU-side filters first: dropped/corrupt frames produce no output and
+        # never reach the VAAPI upload stage, so the pipeline keeps flowing.
         filters = []
         if do_dei:
-            filters.append("deinterlace_vaapi")
+            filters.append("yadif")
         if scale_h:
-            filters.append(f"scale_vaapi=-2:{scale_h}")
+            # libplacebo: Vulkan-accelerated upscale, CPU frames in/out.
+            # spline36 is a good quality/speed balance for broadcast upscaling.
+            filters.append(f"libplacebo=w=-2:h={scale_h}:upscaler=spline36")
 
         if do_enc:
-            vf = (["-vf", ",".join(filters)] if filters else [])
-            video = vf + ["-c:v", "h264_vaapi"] + cls._FFMPEG_GOP_VAAPI
+            filters.extend(["format=nv12", "hwupload"])
+            video = ["-vf", ",".join(filters), "-c:v", "h264_vaapi"] + cls._FFMPEG_GOP_VAAPI
         else:
-            # Download back to system RAM for libx264 fallback.
-            dl = filters + ["hwdownload", "format=nv12"]
-            if cls._ffmpeg_has_h264_decoder:
-                video = ["-vf", ",".join(dl),
-                         "-c:v", "libx264",
-                         "-preset", "ultrafast", "-tune", "zerolatency",
-                         "-pix_fmt", "yuv420p"] + cls._FFMPEG_GOP
-            else:
-                video = ["-vf", "hwdownload,format=nv12", "-c:v", "copy"]
+            sw = (["-c:v", "libx264", "-preset", "ultrafast",
+                   "-tune", "zerolatency", "-pix_fmt", "yuv420p"] + cls._FFMPEG_GOP
+                  if cls._ffmpeg_has_h264_decoder else ["-c:v", "copy"])
+            video = (["-vf", ",".join(filters)] if filters else []) + sw
 
         return pre + video + cls._FFMPEG_AUDIO_OUT
 
