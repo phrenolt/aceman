@@ -25,7 +25,7 @@ FROM docker.io/library/python:3.11-slim-bookworm
 # --no-install-recommends keeps the image lean (no docs / X libs).
 # rm -rf /var/lib/apt/lists shaves another ~40 MB.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ffmpeg mesa-va-drivers libva-drm2 mesa-vulkan-drivers \
+    && apt-get install -y --no-install-recommends ffmpeg mesa-va-drivers libva-drm2 \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
