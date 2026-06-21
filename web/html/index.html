@@ -279,6 +279,16 @@
           <span id="desktop-path" style="display:none"></span>
         </div>
 
+        <div class="setup-row">
+          <div class="setup-row-head">
+            <span>Lifecycle</span>
+          </div>
+          <div class="row">
+            <button id="server-restart" title="Re-spawn the aceman web frontend and the host broker. The engine container is podman-restarted alongside. Any active player is closed first. The browser tab reloads itself when the new instance comes up.">Restart</button>
+            <button id="server-shutdown" title="Stop everything: close the active external player (if any), stop the engine container, terminate the host broker, and shut down the web frontend. The browser tab will display a 'stopped' notice — you can then close it.">Quit</button>
+          </div>
+        </div>
+
         <div class="setup-row" id="gpu-card" style="display:none">
           <div class="setup-row-head">
             <span>GPU Acceleration</span>
@@ -322,16 +332,6 @@
             </div>
           </div>
           <div class="gate-hint" id="gpu-hint" style="margin-top:.3rem"></div>
-        </div>
-
-        <div class="setup-row">
-          <div class="setup-row-head">
-            <span>Lifecycle</span>
-          </div>
-          <div class="row">
-            <button id="server-restart" title="Re-spawn the aceman web frontend and the host broker. The engine container is podman-restarted alongside. Any active player is closed first. The browser tab reloads itself when the new instance comes up.">Restart</button>
-            <button id="server-shutdown" title="Stop everything: close the active external player (if any), stop the engine container, terminate the host broker, and shut down the web frontend. The browser tab will display a 'stopped' notice — you can then close it.">Quit</button>
-          </div>
         </div>
       </div>
 
