@@ -217,7 +217,7 @@
         <span class="field-label">Play in</span>
         <select id="playback-target" disabled><option>…</option></select>
         <button id="playback-move" style="display:none">Move current stream here</button>
-        <label id="show-all-row" style="display:flex; align-items:center; gap:.3rem; white-space:nowrap">
+        <label id="show-all-row" style="display:flex; align-items:center; gap:.3rem; white-space:nowrap; margin-left:auto">
           <input type="checkbox" id="show-all-browsers"> <span class="tip" data-tip="By default we hide browser entries that look like the one you're already in, since the browser's UA string can't distinguish, e.g., system Firefox from Flatpak Firefox. Turn this on to see every detected install — useful only when you specifically want to switch between two installs of the same browser.">Show all browser installs</span>
         </label>
       </div>
@@ -250,7 +250,7 @@
       <div class="gate-hint" id="player-hint"></div>
     </div>
 
-    <div class="card has-card-label">
+    <div class="card has-card-label" id="engine-card">
       <span class="card-label"><span id="engine-label" class="has-tooltip">Engine</span> <span class="status" id="engine-status" style="margin-left:.3rem">…</span></span>
       <div class="row" style="justify-content: center">
         <label><input type="checkbox" id="autostart"> Start engine when aceman launches</label>
