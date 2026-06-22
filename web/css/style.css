@@ -271,6 +271,14 @@
      dropdown instead of pushing it off-center. */
   .has-card-label .field:first-of-type { justify-content: center; }
   .has-card-label .field:first-of-type .field-label { min-width: auto; }
+  /* Player card overrides the generic centering so "Play in" and
+     "Buffer" share the same left edge (5.5 rem label column).
+     show-all-row uses margin-left:auto to sit at the row's right end. */
+  #player-card .field:first-of-type { justify-content: flex-start; }
+  #player-card .field:first-of-type .field-label { min-width: 5.5rem; }
+  /* Thin separator between the player-select row and the buffer row,
+     matching the setup-grid row dividers. */
+  #player-card #buffer-field { border-top: 1px solid #2a2a2a; padding-top: .4rem; }
   .row { display: flex; gap: .5rem; align-items: center; margin: .5rem 0; }
   .row input { flex: 1; }
   .card { border: 1px solid #333; border-radius: 6px; padding: .75rem 1rem; margin: 1rem 0;
@@ -389,6 +397,10 @@
      button+input floats in the middle of whatever height the tallest
      sibling forces. */
   #play-card { display: flex; flex-direction: column; justify-content: center; }
+  /* Engine card: same vertical-centering treatment as the play card so
+     the checkbox + button rows float in the middle of whatever height
+     the tallest sibling (playback card) forces. */
+  #engine-card { display: flex; flex-direction: column; justify-content: center; }
   /* 52ch = one full "acestream://[40-hex]" URL — the most demanding input
      the field ever receives. The input will not shrink below this, so the
      save button is naturally forced to its own flex line whenever the row
