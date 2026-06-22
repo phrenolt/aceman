@@ -415,8 +415,9 @@
   #engine-card { display: flex; flex-direction: column; justify-content: center; }
   /* cid-wrap is a single flex item in the play row that holds the input
      and the clear button together — they can never split across lines.
-     min-width drives wrapping just as the bare input used to. */
-  .cid-wrap { display: flex; align-items: center; flex: 1; min-width: 52ch; }
+     min-width:0 lets the input shrink so the buttons on either side
+     always share the same row; flex:1 still fills the remaining space. */
+  .cid-wrap { display: flex; align-items: center; flex: 1; min-width: 0; }
   #cid-input { flex: 1; min-width: 0; }
   /* Don't let the save button shrink: when there isn't enough horizontal
      room for both the full-width input and this button, the button wraps.

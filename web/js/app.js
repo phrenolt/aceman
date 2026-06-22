@@ -2231,7 +2231,7 @@ async function toggleDesktopEntry() {
     if (b >= 1024)      return (b / 1024).toFixed(0) + ' KiB';
     return b + ' B';
   };
-  const _applyMemCell = (cellId, displayId, hintId, data) => {
+  const _applyMemCell = (cellId, displayId, hintId, envKey, data) => {
     const cell = $(cellId);
     if (!cell) return;
     if (!data.available) { cell.style.display = 'none'; return; }
@@ -2242,8 +2242,16 @@ async function toggleDesktopEntry() {
                       (data.limit_bytes - data.mem_bytes) < MEM_WARN_BYTES;
     cell.classList.toggle('mem-cell-warn', nearLimit);
     if (hint) {
-      hint.textContent = nearLimit ? '— consider ACE_WEB_MEMORY=2g' : '';
+      hint.textContent = nearLimit ? `— consider raising ${envKey}` : '';
       hint.style.display = nearLimit ? '' : 'none';
+    }
+    // Update tooltip on the label span with actual current limit
+    const label = cell.querySelector('.tip');
+    if (label && data.limit_bytes > 0) {
+      const cur = _fmtBytes(data.limit_bytes);
+      const cfgFile = '~/.config/aceman/env';
+      label.dataset.tip =
+        `Current limit: ${cur}\nTo change: add ${envKey}=2g to ${cfgFile}\nthen restart.`;
     }
     cell.style.display = '';
   };
@@ -2255,8 +2263,8 @@ async function toggleDesktopEntry() {
         fetch('/api/web/memory').then(r => r.json()),
         fetch('/api/engine/memory').then(r => r.json()),
       ]);
-      _applyMemCell('web-mem-cell', 'web-mem-display', 'web-mem-hint', webMem);
-      _applyMemCell('eng-mem-cell', 'eng-mem-display', 'eng-mem-hint', engMem);
+      _applyMemCell('web-mem-cell', 'web-mem-display', 'web-mem-hint', 'ACE_WEB_MEMORY', webMem);
+      _applyMemCell('eng-mem-cell', 'eng-mem-display', 'eng-mem-hint', 'ACE_MEMORY',     engMem);
       const anyVisible = ($('web-mem-cell') && $('web-mem-cell').style.display !== 'none')
                       || ($('eng-mem-cell') && $('eng-mem-cell').style.display !== 'none');
       row.style.display = anyVisible ? 'flex' : 'none';

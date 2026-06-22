@@ -87,6 +87,13 @@ fi
 set -e
 SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
 
+# User-editable env overrides (ACE_MEMORY, ACE_WEB_MEMORY, …).
+# Sourced before any container launch so values are inherited by
+# run-web-container.sh and run-container.sh without re-launching.
+_ACE_ENV="${XDG_CONFIG_HOME:-$HOME/.config}/aceman/env"
+# shellcheck source=/dev/null
+[ -f "$_ACE_ENV" ] && . "$_ACE_ENV" || true
+
 # Log directory. Both the web frontend and the auto-spawned broker
 # append here so `tools/tail-*.sh` (and any `tail -f` you fancy) have a
 # stable path. ~/.cache lives outside ~/.config on purpose — these are
