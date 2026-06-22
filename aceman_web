@@ -71,6 +71,19 @@
 # manifest. Broker survives this wrapper exiting and serves any future
 # launches in the same user session.
 
+# Desktop-entry launchers (e.g. Cinnamon on Linux Mint) track launched
+# processes and may send SIGTERM after their startup-notification timeout
+# (~30 s) if the process hasn't opened a window — which kills a first-run
+# image build long before the container starts.  Re-exec via `setsid -f`
+# when we detect no terminal so the process runs in its own session,
+# completely detached from the launcher's process group.
+# ACEMAN_LAUNCHED=1 is the re-exec guard that prevents an infinite loop.
+# The || true means a missing setsid falls through harmlessly.
+if [ ! -t 0 ] && [ ! -t 1 ] && [ "${ACEMAN_LAUNCHED:-0}" != 1 ]; then
+    export ACEMAN_LAUNCHED=1
+    exec setsid -f "$0" "$@" || true
+fi
+
 set -e
 SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
 
