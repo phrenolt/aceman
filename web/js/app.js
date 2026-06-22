@@ -885,8 +885,8 @@ function _preRollBuffer(v, status, target, onRelease) {
 
 function getPlaybackBuffer() {
   const el = $('playback-buffer');
-  if (el) return clampBuffer(el.value, 300);
-  return clampBuffer(localStorage.getItem(KEYS.PLAYBACK_BUFFER), 300);
+  if (el) return clampBuffer(el.value, 60);
+  return clampBuffer(localStorage.getItem(KEYS.PLAYBACK_BUFFER), 60);
 }
 
 function stopInBrowserPlayback() {
@@ -2348,14 +2348,14 @@ async function toggleDesktopEntry() {
     const bufSlider = $('playback-buffer');
     const bufOut    = $('playback-buffer-out');
     if (bufSlider) {
-      bufSlider.max = '300';
+      bufSlider.max = '60';
       const storedVal = parseInt(localStorage.getItem(KEYS.PLAYBACK_BUFFER) || '0', 10);
-      bufSlider.value = String(Math.min(Math.max(storedVal, 0), 300));
-      if (bufOut) bufOut.textContent = bufferLabel(bufSlider.value, 300);
+      bufSlider.value = String(Math.min(Math.max(storedVal, 0), 60));
+      if (bufOut) bufOut.textContent = bufferLabel(bufSlider.value, 60);
       bufSlider.oninput = () => {
-        const n = Math.min(Math.max(parseInt(bufSlider.value, 10), 0), 300);
+        const n = Math.min(Math.max(parseInt(bufSlider.value, 10), 0), 60);
         localStorage.setItem(KEYS.PLAYBACK_BUFFER, String(n));
-        if (bufOut) bufOut.textContent = bufferLabel(n, 300);
+        if (bufOut) bufOut.textContent = bufferLabel(n, 60);
       };
     }
   }
