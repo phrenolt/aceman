@@ -63,6 +63,11 @@
 
 set -euo pipefail
 
+# User-editable env overrides (ACE_MEMORY, ACE_WEB_MEMORY, …).
+_ACE_ENV="${XDG_CONFIG_HOME:-$HOME/.config}/aceman/env"
+# shellcheck source=/dev/null
+[ -f "$_ACE_ENV" ] && . "$_ACE_ENV" || true
+
 ENGINE="${ACE_ENGINE:-http://127.0.0.1:6878}"
 ACE_NAME="${ACE_NAME:-ace}"
 SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
