@@ -37,9 +37,7 @@ export function buildPlaybackOptions({
   // "This Firefox tab" reads clearer than the generic. With "show
   // all" on, the bare option could correspond to any of several
   // installs of the same browser, so the generic is honest.
-  const thisLabel = (!showAll && currentBrowser)
-      ? `This ${browserLabel(currentBrowser)} tab`
-      : 'This browser tab';
+  const thisLabel = 'This tab';
   const thisTabOption = {
     value: 'browser',
     text: inBrowserSupported

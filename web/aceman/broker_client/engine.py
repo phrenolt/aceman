@@ -43,3 +43,9 @@ class EngineBrokerClient:
 
     def stop(self) -> dict:
         return self.broker.call("engine.stop", timeout=30)
+
+    def memory(self) -> dict:
+        try:
+            return self.broker.call("engine.memory", timeout=8)
+        except BrokerError:
+            return {"available": False}

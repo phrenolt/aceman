@@ -54,8 +54,15 @@ def engine_stop(req: Request, ctx: RouteContext) -> Response:
         return Response.error(502, str(e))
 
 
+def engine_memory(req: Request, ctx: RouteContext) -> Response:
+    if not ctx.engine_mgr:
+        return Response.json(200, {"available": False})
+    return Response.json(200, ctx.engine_mgr.memory())
+
+
 def register(router: Router) -> None:
     router.get("/api/engine/probe", engine_probe_route)
     router.get("/api/engine/status", engine_status)
     router.post("/api/engine/start", engine_start)
     router.post("/api/engine/stop", engine_stop)
+    router.get("/api/engine/memory", engine_memory)
