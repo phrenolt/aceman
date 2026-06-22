@@ -401,12 +401,11 @@
      the checkbox + button rows float in the middle of whatever height
      the tallest sibling (playback card) forces. */
   #engine-card { display: flex; flex-direction: column; justify-content: center; }
-  /* 52ch = one full "acestream://[40-hex]" URL — the most demanding input
-     the field ever receives. The input will not shrink below this, so the
-     save button is naturally forced to its own flex line whenever the row
-     is too narrow to display the content ID unclipped. No px breakpoint
-     needed — the wrap is driven by content width. */
-  #cid-input { min-width: 52ch; }
+  /* cid-wrap is a single flex item in the play row that holds the input
+     and the clear button together — they can never split across lines.
+     min-width drives wrapping just as the bare input used to. */
+  .cid-wrap { display: flex; align-items: center; flex: 1; min-width: 52ch; }
+  #cid-input { flex: 1; min-width: 0; }
   /* Don't let the save button shrink: when there isn't enough horizontal
      room for both the full-width input and this button, the button wraps.
      margin auto then centres it on its solo line in single-column mode. */
