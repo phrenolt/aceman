@@ -251,11 +251,6 @@
           <span id="buffer-large-max-hint" style="font-size:.8rem"></span>
         </div>
       </div>
-      <div id="web-mem-row" style="display:none; justify-content:center; align-items:center; gap:.5rem; font-size:.8rem; color:var(--mut); padding:.2rem 0">
-        <span>Web memory</span>
-        <span id="web-mem-display"></span>
-        <span id="web-mem-hint" style="display:none; font-size:.75rem"></span>
-      </div>
       <div class="gate-hint" id="player-hint"></div>
     </div>
 
@@ -310,6 +305,16 @@
           <div class="row" style="justify-content:center">
             <button id="server-restart" title="Re-spawn the aceman web frontend and the host broker. The engine container is podman-restarted alongside. Any active player is closed first. The browser tab reloads itself when the new instance comes up.">Restart</button>
             <button id="server-shutdown" title="Stop everything: close the active external player (if any), stop the engine container, terminate the host broker, and shut down the web frontend. The browser tab will display a 'stopped' notice — you can then close it.">Quit</button>
+          </div>
+          <div id="container-mem-row" style="display:none; justify-content:center; align-items:center; gap:1rem; font-size:.78rem; color:var(--mut); padding-top:.35rem; flex-wrap:wrap">
+            <span id="web-mem-cell" style="display:none">
+              Web <span id="web-mem-display"></span>
+              <span id="web-mem-hint" style="display:none"></span>
+            </span>
+            <span id="eng-mem-cell" style="display:none">
+              Engine <span id="eng-mem-display"></span>
+              <span id="eng-mem-hint" style="display:none"></span>
+            </span>
           </div>
         </div>
 
