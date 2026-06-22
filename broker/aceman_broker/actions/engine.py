@@ -7,6 +7,7 @@ spawn or stop-while-starting.
 
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import threading
@@ -234,6 +235,35 @@ def action_engine_restart(params: "dict | None" = None) -> dict:
             f"container restarted but engine never answered at {ENGINE_URL}")
 
 
+def action_engine_memory(params: "dict | None" = None) -> dict:
+    """Return current and limit memory for the engine container.
+    Same parsing logic as web.memory — see web_lifecycle.py."""
+    from .web_lifecycle import _parse_mem_str
+    if not container_running_named(NAME):
+        return {"available": False}
+    try:
+        r = subprocess.run(
+            ["podman", "stats", "--no-stream", "--format", "json", NAME],
+            capture_output=True, text=True, timeout=6,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return {"available": False}
+    if r.returncode != 0:
+        return {"available": False}
+    try:
+        data = json.loads(r.stdout.strip())
+        entry = data[0] if isinstance(data, list) else data
+        mem_usage = entry.get("MemUsage") or entry.get("mem_usage") or ""
+        parts = mem_usage.split("/")
+        if len(parts) != 2:
+            return {"available": False}
+        mem_bytes = _parse_mem_str(parts[0])
+        limit_bytes = _parse_mem_str(parts[1])
+    except (json.JSONDecodeError, IndexError, KeyError, ValueError):
+        return {"available": False}
+    return {"available": True, "mem_bytes": mem_bytes, "limit_bytes": limit_bytes}
+
+
 def register(actions: dict) -> None:
     from . import register as _r
     _r(actions, "engine.status", action_engine_status)
@@ -241,3 +271,4 @@ def register(actions: dict) -> None:
     _r(actions, "engine.start", action_engine_start)
     _r(actions, "engine.stop", action_engine_stop)
     _r(actions, "engine.restart", action_engine_restart)
+    _r(actions, "engine.memory", action_engine_memory)

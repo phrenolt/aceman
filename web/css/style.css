@@ -282,15 +282,15 @@
   /* Thin separator between the player-select row and the buffer row,
      matching the setup-grid row dividers. */
   #player-card #buffer-field { border-top: 1px solid #2a2a2a; padding-top: .4rem; }
-  /* Web-container memory row — subtle by default, turns red when close to limit */
-  #web-mem-row { display: flex; }
-  #web-mem-display { font-variant-numeric: tabular-nums; }
-  .web-mem-warn { color: var(--err) !important; }
+  /* Container memory row (Lifecycle section) — subtle, turns red near limit */
+  #container-mem-row { display: flex; }
+  #web-mem-display, #eng-mem-display { font-variant-numeric: tabular-nums; }
+  .mem-cell-warn { color: var(--err) !important; }
   @keyframes mem-glow {
     0%, 100% { text-shadow: 0 0 4px rgba(220,60,60,.35); }
     50%       { text-shadow: 0 0 9px rgba(220,60,60,.75); }
   }
-  .web-mem-warn #web-mem-display { animation: mem-glow 1.6s ease-in-out infinite; }
+  .mem-cell-warn span:first-of-type { animation: mem-glow 1.6s ease-in-out infinite; }
   .row { display: flex; gap: .5rem; align-items: center; margin: .5rem 0; }
   .row input { flex: 1; }
   .card { border: 1px solid #333; border-radius: 6px; padding: .75rem 1rem; margin: 1rem 0;
