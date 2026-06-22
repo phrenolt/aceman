@@ -877,7 +877,7 @@ function _effectiveBufMax() {
   const largeMaxIn = $('buffer-large-max');
   if (!largeCb || !largeCb.checked) return 60;
   const v = parseInt(largeMaxIn && largeMaxIn.value, 10);
-  return (Number.isFinite(v) && v > 60) ? Math.min(v, 300) : 120;
+  return (Number.isFinite(v) && v >= 60) ? Math.min(v, 300) : 120;
 }
 
 function getPlaybackBuffer() {
@@ -2298,42 +2298,62 @@ async function toggleDesktopEntry() {
   }
   // In-tab pre-roll buffer slider. 0 = Off (live edge). Read at play time.
   {
-    const bufSlider   = $('playback-buffer');
-    const bufOut      = $('playback-buffer-out');
-    const largeCb     = $('buffer-large-cb');
+    const bufSlider    = $('playback-buffer');
+    const bufOut       = $('playback-buffer-out');
+    const largeCb      = $('buffer-large-cb');
     const largeMaxWrap = $('buffer-large-max-wrap');
-    const largeMaxIn  = $('buffer-large-max');
+    const largeMaxIn   = $('buffer-large-max');
 
     if (bufSlider) {
-      // Scale the current slider value proportionally to a new max ceiling.
+      // Update the slider max and clamp the current value to it.
+      // Intentionally NOT proportional — 9 s stays 9 s; the thumb
+      // just moves left when the ceiling grows.
       const applyBufMax = (newMax) => {
-        const oldMax = parseInt(bufSlider.max, 10) || 60;
-        const oldVal = parseInt(bufSlider.value, 10) || 0;
-        const newVal = oldMax > 0
-          ? Math.min(Math.round(oldVal / oldMax * newMax), newMax)
-          : 0;
+        const cur = parseInt(bufSlider.value, 10) || 0;
+        const clamped = Math.min(cur, newMax);
         bufSlider.max = String(newMax);
-        bufSlider.value = String(newVal);
-        localStorage.setItem(KEYS.PLAYBACK_BUFFER, String(newVal));
-        if (bufOut) bufOut.textContent = bufferLabel(newVal, newMax);
+        bufSlider.value = String(clamped);
+        localStorage.setItem(KEYS.PLAYBACK_BUFFER, String(clamped));
+        if (bufOut) bufOut.textContent = bufferLabel(clamped, newMax);
+        updateLargeHint(newMax);
+      };
+
+      // Hint label to the right of the Max input:
+      //   < 60  → "must be ≥ 60" in red
+      //   = 60  → "(default)" greyed — same range as standard mode
+      //   > 60  → blank
+      const updateLargeHint = (max) => {
+        const hint = $('buffer-large-max-hint');
+        if (!hint) return;
+        if (!Number.isFinite(max) || max < 60) {
+          hint.textContent = 'must be ≥ 60';
+          hint.style.color = 'var(--err)';
+        } else if (max === 60) {
+          hint.textContent = '(default)';
+          hint.style.color = 'var(--mut)';
+        } else {
+          hint.textContent = '';
+          hint.style.color = '';
+        }
       };
 
       // Restore large-buffer state first so the slider max is correct.
-      const largeEnabled  = localStorage.getItem(KEYS.BUFFER_LARGE_ENABLED) === '1';
+      const largeEnabled   = localStorage.getItem(KEYS.BUFFER_LARGE_ENABLED) === '1';
       const storedLargeMax = Math.min(
-        Math.max(parseInt(localStorage.getItem(KEYS.BUFFER_LARGE_MAX) || '120', 10), 61),
+        Math.max(parseInt(localStorage.getItem(KEYS.BUFFER_LARGE_MAX) || '120', 10), 60),
         300
       );
       const initMax = largeEnabled ? storedLargeMax : 60;
 
-      if (largeCb)     largeCb.checked = largeEnabled;
-      if (largeMaxIn && largeEnabled)  largeMaxIn.value = String(storedLargeMax);
+      if (largeCb)    largeCb.checked = largeEnabled;
+      if (largeMaxIn && largeEnabled) largeMaxIn.value = String(storedLargeMax);
       if (largeMaxWrap) largeMaxWrap.style.display = largeEnabled ? 'flex' : 'none';
 
       bufSlider.max = String(initMax);
       const storedVal = parseInt(localStorage.getItem(KEYS.PLAYBACK_BUFFER) || '0', 10);
       bufSlider.value = String(Math.min(Math.max(storedVal, 0), initMax));
       if (bufOut) bufOut.textContent = bufferLabel(bufSlider.value, initMax);
+      if (largeEnabled) updateLargeHint(initMax);
 
       bufSlider.oninput = () => {
         const max = _effectiveBufMax();
@@ -2349,7 +2369,7 @@ async function toggleDesktopEntry() {
           if (largeMaxWrap) largeMaxWrap.style.display = enabled ? 'flex' : 'none';
           if (enabled && largeMaxIn) {
             const stored = Math.min(
-              Math.max(parseInt(localStorage.getItem(KEYS.BUFFER_LARGE_MAX) || '120', 10), 61),
+              Math.max(parseInt(localStorage.getItem(KEYS.BUFFER_LARGE_MAX) || '120', 10), 60),
               300
             );
             largeMaxIn.value = String(stored);
@@ -2361,9 +2381,27 @@ async function toggleDesktopEntry() {
       if (largeMaxIn) {
         largeMaxIn.oninput = () => {
           const v = parseInt(largeMaxIn.value, 10);
-          if (!Number.isFinite(v) || v < 61 || v > 300) return;
-          localStorage.setItem(KEYS.BUFFER_LARGE_MAX, String(v));
-          applyBufMax(v);
+          if (!Number.isFinite(v)) return;
+          if (v < 60) { updateLargeHint(v); return; }  // show error, don't apply
+          const clamped = Math.min(v, 300);
+          if (v > 300) largeMaxIn.value = '300';
+          localStorage.setItem(KEYS.BUFFER_LARGE_MAX, String(clamped));
+          applyBufMax(clamped);
+        };
+
+        // Custom ▲▼ buttons — step by 5 for comfort at 60–300 s scale.
+        const step = 5;
+        const bufMaxUp = $('buf-max-up');
+        const bufMaxDn = $('buf-max-dn');
+        if (bufMaxUp) bufMaxUp.onclick = () => {
+          const v = Math.min((parseInt(largeMaxIn.value, 10) || 60) + step, 300);
+          largeMaxIn.value = String(v);
+          largeMaxIn.dispatchEvent(new Event('input'));
+        };
+        if (bufMaxDn) bufMaxDn.onclick = () => {
+          const v = Math.max((parseInt(largeMaxIn.value, 10) || 60) - step, 60);
+          largeMaxIn.value = String(v);
+          largeMaxIn.dispatchEvent(new Event('input'));
         };
       }
     }
