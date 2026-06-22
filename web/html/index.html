@@ -290,11 +290,11 @@
           </div>
           <div id="container-mem-row" style="display:none; justify-content:center; align-items:center; gap:1rem; font-size:.78rem; color:var(--mut); padding-top:.35rem; flex-wrap:wrap">
             <span id="web-mem-cell" style="display:none">
-              Web <span id="web-mem-display"></span>
+              <span class="tip" data-tip="Web container memory (RSS). Default: 1 GiB. To raise: ACE_WEB_MEMORY=2g aceman_web">Web</span> <span id="web-mem-display"></span>
               <span id="web-mem-hint" style="display:none"></span>
             </span>
             <span id="eng-mem-cell" style="display:none">
-              Engine <span id="eng-mem-display"></span>
+              <span class="tip" data-tip="Engine container memory (RSS). Default: 5 GiB. To raise: ACE_MEMORY=8g aceman_web  or  aceman engine start --memory 8g">Engine</span> <span id="eng-mem-display"></span>
               <span id="eng-mem-hint" style="display:none"></span>
             </span>
           </div>
