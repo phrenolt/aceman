@@ -2316,12 +2316,14 @@ async function toggleDesktopEntry() {
         localStorage.setItem(KEYS.PLAYBACK_BUFFER, String(clamped));
         if (bufOut) bufOut.textContent = bufferLabel(clamped, newMax);
         updateLargeHint(newMax);
+        updateBufSliderZone(newMax);
       };
 
       // Hint label to the right of the Max input:
-      //   < 60  → "must be ≥ 60" in red
-      //   = 60  → "(default)" greyed — same range as standard mode
-      //   > 60  → blank
+      //   < 60     → "must be ≥ 60" in red
+      //   = 60     → "(default)" greyed — same range as standard mode
+      //   61–120   → blank
+      //   > 120    → memory nudge in muted text
       const updateLargeHint = (max) => {
         const hint = $('buffer-large-max-hint');
         if (!hint) return;
@@ -2331,10 +2333,26 @@ async function toggleDesktopEntry() {
         } else if (max === 60) {
           hint.textContent = '(default)';
           hint.style.color = 'var(--mut)';
+        } else if (max > 120) {
+          hint.innerHTML = '— consider <code style="font-size:.75rem">ACE_WEB_MEMORY=2g</code>';
+          hint.style.color = 'var(--mut)';
         } else {
           hint.textContent = '';
           hint.style.color = '';
         }
+      };
+
+      // Amber tint on the slider track from the 60 s mark to the right
+      // edge, making the "large buffer" zone visually distinct.
+      // The slider already uses appearance:none so inline background works.
+      const updateBufSliderZone = (max) => {
+        if (max <= 60) {
+          bufSlider.style.background = '';
+          return;
+        }
+        const pct = (60 / max * 100).toFixed(1);
+        bufSlider.style.background =
+          `linear-gradient(to right,#0c0c0c 0%,#0c0c0c ${pct}%,rgba(181,146,56,.13) ${pct}%)`;
       };
 
       // Restore large-buffer state first so the slider max is correct.
@@ -2353,7 +2371,7 @@ async function toggleDesktopEntry() {
       const storedVal = parseInt(localStorage.getItem(KEYS.PLAYBACK_BUFFER) || '0', 10);
       bufSlider.value = String(Math.min(Math.max(storedVal, 0), initMax));
       if (bufOut) bufOut.textContent = bufferLabel(bufSlider.value, initMax);
-      if (largeEnabled) updateLargeHint(initMax);
+      if (largeEnabled) { updateLargeHint(initMax); updateBufSliderZone(initMax); }
 
       bufSlider.oninput = () => {
         const max = _effectiveBufMax();
