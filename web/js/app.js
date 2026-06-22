@@ -690,7 +690,18 @@ function startInBrowserPlayback(cid) {
   let currentFps = null;
   let _lastFrames = null;
   let _lastFrameTime = null;
-  const playerCfg = { type: 'mpegts', isLive: true, url };
+  const playerCfg = {
+    type: 'mpegts', isLive: true, url,
+    // When the MSE SourceBuffer fills up (browser memory ceiling),
+    // automatically evict the oldest buffered data instead of stalling.
+    // Without this, large buffer values (e.g. 300 s) hit the limit and
+    // suspend the transmuxing task — "SourceBuffer is full".
+    autoCleanupSourceBuffer: true,
+    // Keep at most bufferSecs of backward history; evict anything older.
+    // This lets mpegts.js reclaim space before the browser hard-caps it.
+    autoCleanupMaxBackwardDuration: Math.max(bufferSecs, 60),
+    autoCleanupMinBackwardDuration: Math.max(bufferSecs - 10, 30),
+  };
   if (bufferSecs > 0) {
     // Stop mpegts.js seeking to the live edge — that chasing would
     // erase the very cushion the slider asks us to hold.
@@ -2220,39 +2231,50 @@ async function toggleDesktopEntry() {
   refreshEngineStatus();
   setInterval(refreshEngineStatus, 4000);
 
-  // Web-container memory row — poll every 8 s. Hidden when unavailable
-  // (native mode, container not running, broker down).
-  const WEB_MEM_WARN_BYTES = 100 * 1024 * 1024; // 100 MB from limit
+  // Container memory row (below Lifecycle buttons) — polls both web and
+  // engine containers every 8 s. Each cell hides itself when unavailable.
+  const MEM_WARN_BYTES = 100 * 1024 * 1024;
   const _fmtBytes = (b) => {
     if (b >= 1024 ** 3) return (b / 1024 ** 3).toFixed(2) + ' GiB';
     if (b >= 1024 ** 2) return (b / 1024 ** 2).toFixed(0) + ' MiB';
     if (b >= 1024)      return (b / 1024).toFixed(0) + ' KiB';
     return b + ' B';
   };
-  const refreshWebMemory = async () => {
-    const row = $('web-mem-row');
+  const _applyMemCell = (cellId, displayId, hintId, data) => {
+    const cell = $(cellId);
+    if (!cell) return;
+    if (!data.available) { cell.style.display = 'none'; return; }
+    const display = $(displayId);
+    const hint    = $(hintId);
+    if (display) display.textContent = `${_fmtBytes(data.mem_bytes)} / ${_fmtBytes(data.limit_bytes)}`;
+    const nearLimit = data.limit_bytes > 0 &&
+                      (data.limit_bytes - data.mem_bytes) < MEM_WARN_BYTES;
+    cell.classList.toggle('mem-cell-warn', nearLimit);
+    if (hint) {
+      hint.textContent = nearLimit ? '— consider ACE_WEB_MEMORY=2g' : '';
+      hint.style.display = nearLimit ? '' : 'none';
+    }
+    cell.style.display = '';
+  };
+  const refreshContainerMemory = async () => {
+    const row = $('container-mem-row');
     if (!row) return;
     try {
-      const d = await (await fetch('/api/web/memory')).json();
-      if (!d.available) { row.style.display = 'none'; return; }
-      const display = $('web-mem-display');
-      const hint    = $('web-mem-hint');
-      if (display) display.textContent = `${_fmtBytes(d.mem_bytes)} / ${_fmtBytes(d.limit_bytes)}`;
-      const nearLimit = d.limit_bytes > 0 &&
-                        (d.limit_bytes - d.mem_bytes) < WEB_MEM_WARN_BYTES;
-      row.classList.toggle('web-mem-warn', nearLimit);
-      if (hint) {
-        hint.textContent = nearLimit ? 'consider ACE_WEB_MEMORY=2g' : '';
-        hint.style.display = nearLimit ? '' : 'none';
-      }
-      row.style.display = 'flex';
+      const [webMem, engMem] = await Promise.all([
+        fetch('/api/web/memory').then(r => r.json()),
+        fetch('/api/engine/memory').then(r => r.json()),
+      ]);
+      _applyMemCell('web-mem-cell', 'web-mem-display', 'web-mem-hint', webMem);
+      _applyMemCell('eng-mem-cell', 'eng-mem-display', 'eng-mem-hint', engMem);
+      const anyVisible = ($('web-mem-cell') && $('web-mem-cell').style.display !== 'none')
+                      || ($('eng-mem-cell') && $('eng-mem-cell').style.display !== 'none');
+      row.style.display = anyVisible ? 'flex' : 'none';
     } catch (_) {
-      const row2 = $('web-mem-row');
-      if (row2) row2.style.display = 'none';
+      if (row) row.style.display = 'none';
     }
   };
-  refreshWebMemory();
-  setInterval(refreshWebMemory, 8000);
+  refreshContainerMemory();
+  setInterval(refreshContainerMemory, 8000);
 
   // The Play button toggles between ▶ (idle) and ⏹ (something playing
    // — anywhere: this tab, another browser, vlc, mpv). Clicking it in
