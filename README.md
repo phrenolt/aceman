@@ -46,8 +46,12 @@ Player install hints:
 
 ### Windows (WSL2)
 
-Download the [`wsl/`](wsl/) folder and double-click `install.bat`, then
-`run.bat`. Full steps: **[`wsl/README.md`](wsl/README.md)**.
+Grab the repo ZIP —
+[direct download](https://github.com/curiousconcept/aceman/archive/refs/heads/main.zip) —
+extract it, open the `wsl/` folder, then double-click `install.bat`
+followed by `run.bat`. Prefer Windows VLC/mpv over browser playback?
+`get_url_stream.bat <id>` hands a stream URL to your player. Full steps:
+**[`wsl/README.md`](wsl/README.md)**.
 
 ### macOS
 
