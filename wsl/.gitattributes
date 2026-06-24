@@ -1,0 +1,6 @@
+# .bat must stay CRLF even via GitHub "Download ZIP" (git archive exports
+# the blob verbatim and does not apply eol conversion). -text stores them
+# exactly as committed (CRLF), so both clone and zip yield CRLF.
+*.bat -text
+*.sh  text eol=lf
+*.ico binary
