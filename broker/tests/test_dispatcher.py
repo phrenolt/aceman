@@ -157,15 +157,15 @@ class RegistryShapeTests(unittest.TestCase):
     def test_all_expected_actions_registered(self):
         expected = {
             "engine.status", "engine.logs", "engine.start",
-            "engine.stop", "engine.restart",
+            "engine.stop", "engine.restart", "engine.memory",
             "gpu.status",
             "image.status", "image.install", "image.remove",
             "players.list", "player.stop",
             "browsers.list", "browser.spawn",
             "desktop.status", "desktop.install", "desktop.uninstall",
             "desktop.restore_mimeapps_backup",
-            "broker.shutdown", "broker.respawn",
-            "restart.preflight", "web.restart",
+            "broker.version", "broker.shutdown", "broker.respawn",
+            "restart.preflight", "web.restart", "web.memory",
         }
         self.assertEqual(set(dispatcher.ACTIONS.keys()), expected)
 
