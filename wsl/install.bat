@@ -78,6 +78,10 @@ for /f "delims=" %%i in ('wsl wslpath -a "%~dp0setup.sh"') do set "SH=%%i"
 :: strip CRLF and run as root inside Ubuntu
 wsl -d Ubuntu -u root -- bash -c "tr -d '\r' < '%SH%' | bash"
 
+:: create the Windows Desktop shortcut (arg = run silently, no extra pause)
+echo Creating Desktop shortcut...
+call "%~dp0shortcut.bat" silent
+
 :: setup.sh wrote /etc/wsl.conf (systemd=true + default user). Those only
 :: apply on a fresh boot of the distro, so shut it down now - the next
 :: launch (run.bat) starts with systemd and logs in as the 'ace' user.
