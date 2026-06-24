@@ -16,7 +16,10 @@ echo.
 :: Windows browser" URL appears, wait until the server actually answers,
 :: then open it in the default Windows browser. All output keeps
 :: streaming so you still see the live logs.
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$o=$false; wsl -d Ubuntu -- bash -lc 'cd ~/Projects/aceman && ./aceman_web' 2>&1 | ForEach-Object { Write-Host $_; if(-not $o -and $_ -match 'open in Windows browser: (https?://\S+)'){ $o=$true; $u=$Matches[1].TrimEnd(); Write-Host ''; Write-Host (\"  >>> aceman URL: \" + $u) -ForegroundColor Cyan; for($i=0;$i -lt 40;$i++){ try{ Invoke-WebRequest -UseBasicParsing -TimeoutSec 2 $u | Out-Null; break }catch{ Start-Sleep -Milliseconds 700 } }; Start-Process $u } }"
+:: NOTE: keep every string inside the -Command block SINGLE-quoted. Using
+:: escaped double-quotes (\") here breaks cmd's quoting and trips
+:: "> was unexpected at this time".
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$o=$false; wsl -d Ubuntu -- bash -lc 'cd ~/Projects/aceman && ./aceman_web' 2>&1 | ForEach-Object { Write-Host $_; if(-not $o -and $_ -match 'open in Windows browser: (https?://\S+)'){ $o=$true; $u=$Matches[1].TrimEnd(); Write-Host ''; Write-Host ('  aceman URL: ' + $u) -ForegroundColor Cyan; for($i=0;$i -lt 40;$i++){ try{ Invoke-WebRequest -UseBasicParsing -TimeoutSec 2 $u | Out-Null; break }catch{ Start-Sleep -Milliseconds 700 } }; Start-Process $u } }"
 
 echo.
 echo aceman_web has stopped.
