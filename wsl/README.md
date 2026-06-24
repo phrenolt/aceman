@@ -11,9 +11,13 @@ command line.
 
 ## Get the files onto Windows
 
-Download this `wsl/` folder to your PC (e.g. download the repo ZIP from
-GitHub via **Code → Download ZIP**, then open the `wsl/` folder inside).
-Keep all the files together in one folder.
+Quickest — direct ZIP of the whole repo, no clicking around GitHub:
+
+> **https://github.com/curiousconcept/aceman/archive/refs/heads/main.zip**
+
+Download, extract, and open the `wsl/` folder inside. Keep all the files
+in that folder together. (Equivalent: on the repo page, **Code → Download
+ZIP**.)
 
 ## 1. Install — `install.bat`
 
@@ -49,6 +53,31 @@ Double-click **`run.bat`** (or the **aceman** Desktop icon). It:
 
 Keep the log window open while you use aceman; close it to stop.
 
+## Play in Windows VLC or mpv (optional)
+
+Prefer your Windows-installed player over browser playback? Use
+**`get_url_stream.bat`** — it accepts an Ace Stream id and proxies it to
+`aceman` inside WSL, which resolves a playback URL reachable from Windows
+and prints it (without launching a Linux player):
+
+```
+get_url_stream.bat YOUR_CONTENT_ID
+```
+
+(or run it with no argument and it prompts for the id). It copies the URL
+to your clipboard and, if it finds VLC or mpv, offers to open it. Otherwise
+paste the URL into your player via **Media → Open Network Stream**.
+
+How it works: in WSL, `aceman <id>` starts the engine if needed, returns
+the URL with the WSL guest IP as host, and leaves the session running so
+your Windows player can consume it. The engine times the session out on
+its own when the player goes away.
+
+## Stop everything — `stop.bat`
+
+**`stop.bat`** gracefully stops the web + engine containers and then runs
+`wsl --shutdown`, so nothing aceman-related is left running.
+
 ## Update — `update.bat`
 
 Runs `git pull` inside `~/Projects/aceman`. Read the trust note it prints
@@ -63,10 +92,12 @@ WSL app. Confirms before doing anything.
 
 | File           | What                                                        |
 |----------------|------------------------------------------------------------|
-| `install.bat`  | Install WSL + Ubuntu, provision, create the Desktop shortcut |
-| `setup.sh`     | Linux provisioning (run automatically by `install.bat`)    |
-| `run.bat`      | Launch aceman_web and auto-open the browser                |
-| `shortcut.bat` | Create the Desktop shortcut (also called by `install.bat`) |
-| `update.bat`   | `git pull` the project inside WSL                          |
-| `uninstall.bat`| Remove the distro + WSL                                     |
-| `aceman.ico`   | Shortcut icon                                              |
+| `install.bat`        | Install WSL + Ubuntu, provision, create the Desktop shortcut |
+| `setup.sh`           | Linux provisioning (run automatically by `install.bat`)     |
+| `run.bat`            | Launch aceman_web and auto-open the browser                 |
+| `get_url_stream.bat` | Resolve an Ace Stream id to a URL for Windows VLC/mpv        |
+| `stop.bat`           | Stop aceman containers and shut down WSL                     |
+| `shortcut.bat`       | Create the Desktop shortcut (also called by `install.bat`)  |
+| `update.bat`         | `git pull` the project inside WSL                           |
+| `uninstall.bat`      | Remove the distro + WSL                                     |
+| `aceman.ico`         | Shortcut icon                                               |
