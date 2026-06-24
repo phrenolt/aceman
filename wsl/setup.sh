@@ -12,8 +12,13 @@ if ! id "$NEWUSER" &>/dev/null; then
     # passwordless sudo so the rest is hands-off
     echo "$NEWUSER ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/$NEWUSER
 fi
-# make this the default WSL user
-printf '[user]\ndefault=%s\n' "$NEWUSER" > /etc/wsl.conf
+# /etc/wsl.conf:
+#   [boot] systemd=true  -> gives rootless podman a systemd user slice so the
+#                           cgroup v2 memory controller is delegated; without
+#                           it `podman stats` (and the aceman web mem readout)
+#                           report 0 in WSL. Takes effect after `wsl --shutdown`.
+#   [user] default        -> log in as this user instead of root.
+printf '[boot]\nsystemd=true\n\n[user]\ndefault=%s\n' "$NEWUSER" > /etc/wsl.conf
 
 echo ">> installing dependencies"
 apt-get update -y
