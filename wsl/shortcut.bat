@@ -11,5 +11,6 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command "$ws=New-Object -ComObjec
 
 echo.
 echo Done. Look for the 'aceman' icon on your Desktop - double-click to launch.
-pause
+:: when called with an argument (e.g. from install.bat) skip the pause
+if "%~1"=="" pause
 exit /b
