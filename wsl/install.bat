@@ -78,7 +78,14 @@ for /f "delims=" %%i in ('wsl wslpath -a "%~dp0setup.sh"') do set "SH=%%i"
 :: strip CRLF and run as root inside Ubuntu
 wsl -d Ubuntu -u root -- bash -c "tr -d '\r' < '%SH%' | bash"
 
+:: setup.sh wrote /etc/wsl.conf (systemd=true + default user). Those only
+:: apply on a fresh boot of the distro, so shut it down now - the next
+:: launch (run.bat) starts with systemd and logs in as the 'ace' user.
+echo Applying WSL config (systemd + default user)...
+wsl --shutdown
+
 echo.
-echo === Done. Open Ubuntu and run:  cd ~/Projects/aceman ^&^& ./aceman_web ===
+echo === Done. Launch with run.bat, or open Ubuntu and run: ===
+echo ===   cd ~/Projects/aceman ^&^& ./aceman_web                ===
 pause
 exit /b
