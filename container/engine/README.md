@@ -63,11 +63,27 @@ themselves (notably `ACE_DETACH=1`).
 | `ACE_MEMORY`     | `5g`                         | `--memory` cap on the container.                                    |
 | `ACE_CACHE_SIZE` | `3g`                         | `--tmpfs` size for `/home/ace/.ACEStream`; engine self-evicts at ~90 %. |
 | `ACE_DETACH`     | `0`                          | `1` adds `-d` (background) and returns immediately.                 |
+| `ACE_BLOCK_TELEMETRY` | `0`                     | `1` null-routes Ace Stream's stats/telemetry hosts. **Off by default** — see note below. |
 
 ### Hardening
 
 `run-container.sh` applies: `--cap-drop=ALL`,
 `--security-opt no-new-privileges`, `--read-only`, tmpfs for `/tmp` and
-`/home/ace/.ACEStream`, memory/PID caps, and `--add-host` entries that
-null-route Ace Stream's statistics endpoints. See
+`/home/ace/.ACEStream`, and memory/PID caps. See
 [`docs/security.md`](../../docs/security.md) for the full threat model.
+
+### Telemetry blocking is opt-in
+
+By **default the engine is allowed to reach Ace Stream's stats/telemetry
+hosts** — Ace Stream's User Agreement requires unhindered access to those
+facilities, so the default keeps you on the compliant side. If you'd
+rather block them, opt in explicitly:
+
+```bash
+ACE_BLOCK_TELEMETRY=1 ./container/engine/run-container.sh
+```
+
+(or export it before launching `aceman` / `aceman_web`). This null-routes
+`stats.acestream.{net,media}` and `awstats.acestream.{net,media}`. It
+improves privacy but may conflict with Ace Stream's terms — enabling it is
+your deliberate choice.

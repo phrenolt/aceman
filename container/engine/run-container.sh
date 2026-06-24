@@ -141,6 +141,22 @@ podman rm -f "$NAME" >/dev/null 2>&1 || true
 detach_flag=()
 [ "${ACE_DETACH:-0}" = "1" ] && detach_flag=(-d)
 
+# Telemetry / statistics endpoints. DEFAULT: ALLOWED (reachable), so the
+# engine behaves as Ace Stream's User Agreement expects — it requires
+# unhindered access to its stats/ad facilities. Opt in to blocking by
+# exporting ACE_BLOCK_TELEMETRY=1 before launch, which null-routes those
+# hosts. That hardens privacy but may conflict with Ace Stream's terms;
+# enabling it is the user's explicit, deliberate choice — not the default.
+telemetry_block_flags=()
+if [ "${ACE_BLOCK_TELEMETRY:-0}" = "1" ]; then
+    telemetry_block_flags=(
+        --add-host stats.acestream.net:0.0.0.0     --add-host stats.acestream.net:::
+        --add-host stats.acestream.media:0.0.0.0   --add-host stats.acestream.media:::
+        --add-host awstats.acestream.net:0.0.0.0   --add-host awstats.acestream.net:::
+        --add-host awstats.acestream.media:0.0.0.0 --add-host awstats.acestream.media:::
+    )
+fi
+
 # Args after "$IMAGE" are appended to the image's ENTRYPOINT (set in
 # Containerfile to: start-engine --client-console --bind-all
 # --disable-sentry), so we only specify the additions here.
@@ -156,10 +172,7 @@ exec podman run --rm "${detach_flag[@]}" \
     --tmpfs "/home/ace/.ACEStream:rw,size=${CACHE_SIZE},mode=1777" \
     --memory "$MEMORY" \
     --pids-limit 768 \
-    --add-host stats.acestream.net:0.0.0.0     --add-host stats.acestream.net::: \
-    --add-host stats.acestream.media:0.0.0.0   --add-host stats.acestream.media::: \
-    --add-host awstats.acestream.net:0.0.0.0   --add-host awstats.acestream.net::: \
-    --add-host awstats.acestream.media:0.0.0.0 --add-host awstats.acestream.media::: \
+    "${telemetry_block_flags[@]}" \
     "$IMAGE" \
         --disk-cache-limit "$DISK_CACHE_LIMIT" \
         --memory-cache-limit "$MEMORY_CACHE_LIMIT" \

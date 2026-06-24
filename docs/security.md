@@ -33,3 +33,13 @@ userspace NAT (slirp4netns / pasta) won't relay UPnP/NAT-PMP to your
 router — so the engine cannot open its own inbound hole. If you opt into
 `ACE_P2P_PORT`, you publish container port `8621` to a host port and take
 on that inbound exposure deliberately.
+
+## Telemetry: allowed by default, blocking is opt-in
+
+The engine is **allowed to reach Ace Stream's stats/telemetry hosts by
+default**, because Ace Stream's User Agreement requires unhindered access
+to those facilities. Blocking them is **not** the default — set
+`ACE_BLOCK_TELEMETRY=1` to null-route `stats.acestream.{net,media}` and
+`awstats.acestream.{net,media}`. That improves privacy but may conflict
+with Ace Stream's terms, so it's left as the user's explicit, deliberate
+choice rather than something the project does on your behalf.
