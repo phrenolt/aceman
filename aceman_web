@@ -413,6 +413,90 @@ attach_to_shared_network "${ACE_NAME:-ace}"
 # a stale socket file — the broker will unlink + rebind on next start).
 BROKER_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/aceman"
 BROKER_SOCK="$BROKER_RUNTIME_DIR/broker.sock"
+
+# Ask a running broker which commit it was LAUNCHED from. Echoes the
+# sha, or nothing on any error (old broker without broker.version,
+# socket gone, bad reply). python3 over the socket keeps us off a
+# socat / `nc -U` dependency — same approach as the --hard-refresh
+# shutdown path above.
+_broker_launch_commit() {
+    command -v python3 >/dev/null || return 1
+    python3 - "$BROKER_SOCK" <<'PY' 2>/dev/null || true
+import json, socket, sys
+s = socket.socket(socket.AF_UNIX)
+s.settimeout(3)
+try:
+    s.connect(sys.argv[1])
+    s.sendall(b'{"action": "broker.version"}\n')
+    buf = b""
+    while b"\n" not in buf:
+        chunk = s.recv(4096)
+        if not chunk:
+            break
+        buf += chunk
+    rep = json.loads(buf.split(b"\n", 1)[0])
+    if rep.get("ok"):
+        sys.stdout.write(rep["result"].get("commit", ""))
+except OSError:
+    pass
+PY
+}
+
+# True iff a running broker is serving stale code and should be
+# restarted. Mirrors the image-cache rule in lib.sh (_ensure_podman_image):
+# trust the running broker only when its launch commit matches the
+# working-tree commit AND the tree is clean. We restart ONLY on a
+# positive signal — a known commit mismatch, or a dirty tree. When we
+# can't tell (no git repo, or a broker too old to report its commit)
+# we leave it running rather than thrash a broker we can't reason about.
+_broker_is_stale() {
+    local want_sha
+    want_sha="$(_resolve_commit "${ACE_COMMIT:-HEAD}")" || want_sha=""
+    [ -n "$want_sha" ] || return 1          # not a git checkout → reuse
+    # Dirty tree (HEAD only, like the image rule) → the broker's pinned
+    # commit can't reflect uncommitted edits, so treat it as behind.
+    if [ "${ACE_COMMIT:-HEAD}" = "HEAD" ] && _repo_is_dirty; then
+        return 0
+    fi
+    local have_sha
+    have_sha="$(_broker_launch_commit)"
+    [ -n "$have_sha" ] || return 1          # broker didn't answer → reuse
+    [ "$have_sha" != "$want_sha" ]
+}
+
+# Ask the running broker to exit, then wait for it to drop the socket.
+# The broker's shutdown action returns a JSON ack and SIGTERMs itself
+# ~200 ms later, unlinking the socket on the way out — so once the
+# inode disappears the spawn below sees "no socket" and starts fresh.
+_broker_request_restart() {
+    command -v python3 >/dev/null || return 1
+    python3 - "$BROKER_SOCK" <<'PY' 2>/dev/null || true
+import socket, sys
+s = socket.socket(socket.AF_UNIX)
+s.settimeout(3)
+try:
+    s.connect(sys.argv[1])
+    s.sendall(b'{"action": "broker.shutdown"}\n')
+    s.recv(4096)
+except OSError:
+    pass
+PY
+    # Up to ~2s for the old broker to unlink its socket before we
+    # respawn. If it lingers we fall through and reuse it — no worse
+    # than today's behaviour.
+    for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
+        [ -S "$BROKER_SOCK" ] || break
+        sleep 0.1
+    done
+}
+
+if [ -S "$BROKER_SOCK" ] && _broker_is_stale; then
+    echo "aceman_web: broker is running older code than the working tree — restarting it"
+    printf '\n=== %s broker restart (stale: working tree moved) ===\n' \
+        "$(date '+%Y-%m-%d %H:%M:%S')" >> "$BROKER_LOG"
+    _broker_request_restart
+fi
+
 if [ -S "$BROKER_SOCK" ]; then
     BROKER_ALREADY_RUNNING=1
 else
@@ -434,6 +518,7 @@ else
         sleep 0.1
     done
 fi
+unset -f _broker_launch_commit _broker_is_stale _broker_request_restart
 
 # No URL → app launcher click or direct CLI invocation. Run the Python
 # web frontend.

@@ -27,29 +27,25 @@ import sys
 import threading
 import time
 
-from ..config import IMAGE, PROJECT_ROOT, WEB_IMAGE, WEB_NAME
+from ..config import (
+    IMAGE, PROJECT_ROOT, STARTUP_COMMIT, WEB_IMAGE, WEB_NAME, head_sha,
+)
 from ..engine_ops import container_running_named, image_commit_label
 from ..logging_util import _log, _safe
 from .restart_helpers import pick_up_image_changes, recreate_container
 from . import register as _register
 
 
-def _current_head_sha() -> str:
-    """Resolve PROJECT_ROOT's git HEAD to a full sha. Empty if we're
-    not in a git repo. No `git rev-parse --verify` because we just
-    want the user's "now" — if the repo has been moved or rewritten,
-    the user is in an unusual state and we'd rather say "unknown"
-    than guess."""
-    try:
-        r = subprocess.run(
-            ["git", "-C", str(PROJECT_ROOT), "rev-parse", "HEAD"],
-            capture_output=True, text=True, timeout=3,
-        )
-    except (FileNotFoundError, subprocess.TimeoutExpired):
-        return ""
-    if r.returncode != 0:
-        return ""
-    return (r.stdout or "").strip()
+def action_broker_version(params: "dict | None" = None) -> dict:
+    """Report the commit this broker process was LAUNCHED from
+    (``config.STARTUP_COMMIT``, frozen at import) — NOT the current
+    on-disk HEAD. The launcher wrapper compares this against the
+    working-tree commit and restarts the broker on drift, the same way
+    it rebuilds an image whose aceman.commit label has fallen behind.
+    Empty ``commit`` means "not launched from a git checkout"; the
+    wrapper treats that as "can't tell" and leaves the broker running.
+    """
+    return {"commit": STARTUP_COMMIT}
 
 
 def action_restart_preflight(params: "dict | None" = None) -> dict:
@@ -64,7 +60,7 @@ def action_restart_preflight(params: "dict | None" = None) -> dict:
     Outside a git repo we return rebuild_recommended=False; we can't
     tell, so we shouldn't nudge.
     """
-    current = _current_head_sha()
+    current = head_sha()
     engine_label = image_commit_label(IMAGE)
     web_label = image_commit_label(WEB_IMAGE)
     engine_drift = bool(current) and engine_label != current
@@ -264,6 +260,7 @@ def action_web_memory(params: "dict | None" = None) -> dict:
 
 
 def register(actions: dict) -> None:
+    _register(actions, "broker.version", action_broker_version)
     _register(actions, "broker.shutdown", action_broker_shutdown)
     _register(actions, "broker.respawn", action_broker_respawn)
     _register(actions, "restart.preflight", action_restart_preflight)

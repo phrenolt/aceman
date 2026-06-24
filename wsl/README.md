@@ -85,6 +85,13 @@ the URL with the WSL guest IP as host, and leaves the session running so
 your Windows player can consume it. The engine times the session out on
 its own when the player goes away.
 
+**Bonus — GPU acceleration.** Because the player runs natively on Windows
+(not inside WSL), it uses your **Windows GPU drivers directly**, so
+playback is hardware-accelerated as long as those drivers are correctly
+installed. This sidesteps the broken GPU/VA-API situation under WSL — it's
+the main reason to prefer this path over browser playback for heavy
+streams.
+
 ## Stop everything — `stop.bat`
 
 **`stop.bat`** gracefully stops the web + engine containers and then runs

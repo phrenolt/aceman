@@ -25,6 +25,9 @@ compare yours against it to confirm you grabbed the same build.
 
 ## Build
 
+> Normally you don't build by hand — `aceman` / `aceman_web` build and
+> cache images for you, labelled `aceman.commit=<sha>`.
+
 ```bash
 mkdir -p container/engine/dist
 mv engine.tar.gz container/engine/dist/
@@ -37,9 +40,6 @@ Build context is `container/engine/` itself, so `COPY dist/engine.tar.gz`
 resolves locally. `.containerignore` (at the project root) keeps the
 context small and the layer cache stable. The aceman-web image has the
 same shape under `container/aceman-web/`.
-
-> Normally you don't build by hand — `aceman` / `aceman_web` build and
-> cache images for you, labelled `aceman.commit=<sha>`.
 
 ## Run
 

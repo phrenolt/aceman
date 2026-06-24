@@ -51,6 +51,32 @@ RUN_SH = PROJECT_ROOT / "container" / "engine" / "run-container.sh"
 # the web UI picks up source changes the same way a relaunch does.
 ENSURE_IMAGE_HELPER = PROJECT_ROOT / "container" / "ensure-image-helper.sh"
 
+
+def head_sha() -> str:
+    """Full git HEAD sha for PROJECT_ROOT, or "" outside a git repo /
+    when git is unavailable. Mirrors lib.sh's `_resolve_commit HEAD` so
+    the broker and the launcher wrapper agree on "what commit is this".
+    """
+    try:
+        r = subprocess.run(
+            ["git", "-C", str(PROJECT_ROOT), "rev-parse", "HEAD"],
+            capture_output=True, text=True, timeout=3,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+        return ""
+    if r.returncode != 0:
+        return ""
+    return (r.stdout or "").strip()
+
+
+# The commit this broker process was LAUNCHED from, frozen at import.
+# A running broker keeps serving old in-memory code after `git checkout`
+# moves HEAD; reporting this pinned value (via the broker.version action)
+# is what lets the launcher notice the drift and restart us — the broker
+# analogue of the aceman.commit image label. Empty outside a git repo,
+# in which case the launcher leaves the running broker alone.
+STARTUP_COMMIT = head_sha()
+
 # Timeouts + caps. None of these are user-controllable.
 MAX_REQ_BYTES = 4 * 1024        # one JSON object, plenty of headroom
 CONN_TIMEOUT = 5.0              # per-connection seconds
