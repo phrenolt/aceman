@@ -96,6 +96,25 @@ The web sends one JSON action per line to the broker over a `0600` unix
 socket; the broker owns every host-touching operation. That boundary is
 the security model — see [`docs/security.md`](docs/security.md).
 
+## Motivation
+
+I wanted a **safe project with minimal dependencies** — one that isn't
+exposed to supply-chain attacks through a sprawling dependency tree. So
+aceman is built on **vanilla technologies**: standard-library Python, plain
+shell, and dependency-free vanilla JavaScript, with the few unavoidable
+third-party pieces vendored, version-pinned, and hash-checked.
+
+It also exists to **wrap the Ace Stream engine at arm's length**. The
+engine stays a separate, sandboxed, untrusted component behind a host-side
+allow-list — so the project is insulated against future changes to the
+engine, and keeps working even if upstream shifts, the original authors
+move on, or the surrounding ecosystem falls into disarray. Few moving
+parts, all readable, nothing that rots quietly.
+
+And of course **Podman, not Docker** — rootless and daemonless, so there's
+no privileged root daemon to trust or to attack. It fits the same
+minimal-trust principle the rest of the project is built on.
+
 ## License
 
 aceman's own code is **MIT** — see [`LICENSE`](LICENSE). Exceptions:
