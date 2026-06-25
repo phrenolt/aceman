@@ -19,6 +19,13 @@ Download, extract, and open the `wsl/` folder inside. Keep all the files
 in that folder together. (Equivalent: on the repo page, **Code → Download
 ZIP**.)
 
+## 0. Make sure WiFi reconnects after reboot
+
+Install reboots midway, and the next phase needs internet to download
+packages and clone the repo. In **Settings → Network & Internet → WiFi →
+your network**, ensure **"Connect automatically when in range"** is
+ticked. Otherwise the reboot comes back offline and provisioning fails.
+
 ## 1. Install — `install.bat`
 
 Double-click **`install.bat`** and approve the UAC prompts. It:
