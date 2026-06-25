@@ -99,6 +99,25 @@ installed. This sidesteps the broken GPU/VA-API situation under WSL — it's
 the main reason to prefer this path over browser playback for heavy
 streams.
 
+## `acestream://` click-to-play (optional)
+
+Want `acestream://` links to *just play* when clicked — including the
+**Play** links in the aceman web UI? Register the handler once:
+
+```
+internal\register-handler.bat
+```
+
+It registers a per-user Windows protocol handler (no admin needed) that
+routes `acestream://<id>` clicks to `get_url_stream.bat`, which resolves
+the stream and opens it in your Windows VLC/mpv (GPU-accelerated). To
+remove it: `internal\unregister-handler.bat` (uninstall does this too).
+
+**Requires VLC or mpv on Windows** — there's nothing to play into
+otherwise, so registration is refused with a clear message if neither is
+found. Note: the handler stores this folder's path, so if you move the
+kit, re-run `register-handler.bat`.
+
 ## Stop everything — `stop.bat`
 
 **`stop.bat`** gracefully stops the web + engine containers and then runs
@@ -116,14 +135,20 @@ WSL app. Confirms before doing anything.
 
 ## Files in this kit
 
-| File           | What                                                        |
-|----------------|------------------------------------------------------------|
+The ones you actually run:
+
+| File                 | What                                                        |
+|----------------------|-------------------------------------------------------------|
 | `install.bat`        | Install WSL + Ubuntu, provision, create the Desktop shortcut |
-| `setup.sh`           | Linux provisioning (run automatically by `install.bat`)     |
 | `run.bat`            | Launch aceman_web and auto-open the browser                 |
 | `get_url_stream.bat` | Resolve an Ace Stream id to a URL for Windows VLC/mpv        |
 | `stop.bat`           | Stop aceman containers and shut down WSL                     |
-| `shortcut.bat`       | Create the Desktop shortcut (also called by `install.bat`)  |
 | `update.bat`         | `git pull` the project inside WSL                           |
 | `uninstall.bat`      | Remove the distro + WSL                                     |
-| `aceman.ico`         | Shortcut icon                                               |
+
+`internal/` holds bits used by `install.bat` and the optional handler —
+mostly no need to touch them: `setup.sh` (Linux provisioning),
+`shortcut.bat` (Desktop-shortcut creator, also runnable on its own),
+`aceman.ico` (the shortcut icon), and `register-handler.bat` /
+`unregister-handler.bat` (the optional `acestream://` click-to-play
+handler — see above).
