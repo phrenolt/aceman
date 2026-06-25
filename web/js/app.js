@@ -877,6 +877,7 @@ async function initGpuCard() {
       scale:       $('gpu-upscale').value,
     });
     _refreshUpscaleNote();
+    notifyRestartNeeded();   // GPU change applies on next stream start
   };
   $('gpu-encode').onchange      = persist;
   $('gpu-deinterlace').onchange = persist;
@@ -1606,11 +1607,14 @@ function refreshPlayButton() {
   // the current buffer_secs. Restart is how a changed buffer/GPU setting
   // takes effect.
   if (rbtn) rbtn.style.display = livePlaybackTarget ? '' : 'none';
+  // Nothing live → no stream to restart, so retire the reminder.
+  if (!livePlaybackTarget) dismissNotice('restart-needed');
 }
 
 async function restartStream() {
   if (!current) return;
   const cid = current.cid;
+  dismissNotice('restart-needed');   // restarting resolves the reminder
   showBusy('Restarting…');
   try {
     stopInBrowserPlayback();
@@ -1621,6 +1625,69 @@ async function restartStream() {
   } finally {
     hideBusy();
   }
+}
+
+// ── Generic top-notice component ──────────────────────────────────────
+// A non-blocking, dismissible banner for "heads-up (+ optional action)"
+// messages. Rendered into #notice-host; reusable for any future
+// notification. De-dupes by id (re-showing the same id updates in place).
+//   showNotice({ id, message, actionLabel, onAction, variant })
+function showNotice({ id, message, actionLabel, onAction, variant } = {}) {
+  const host = $('notice-host');
+  if (!host) return;
+  let el = id ? host.querySelector('#' + (window.CSS ? CSS.escape(id) : id)) : null;
+  if (!el) {
+    el = document.createElement('div');
+    if (id) el.id = id;
+    host.appendChild(el);
+  }
+  el.className = 'notice' + (variant ? ' notice--' + variant : '');
+  el.setAttribute('role', 'status');
+  el.replaceChildren();
+  const msg = document.createElement('span');
+  msg.className = 'notice-msg';
+  msg.textContent = message || '';
+  el.appendChild(msg);
+  const actions = document.createElement('span');
+  actions.className = 'notice-actions';
+  if (actionLabel && typeof onAction === 'function') {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'notice-btn';
+    btn.textContent = actionLabel;
+    btn.onclick = onAction;
+    actions.appendChild(btn);
+  }
+  const x = document.createElement('button');
+  x.type = 'button';
+  x.className = 'notice-x';
+  x.title = 'Dismiss';
+  x.setAttribute('aria-label', 'Dismiss');
+  x.textContent = '✕';
+  x.onclick = () => el.remove();
+  actions.appendChild(x);
+  el.appendChild(actions);
+}
+
+function dismissNotice(id) {
+  const host = $('notice-host');
+  const el = host && id
+    ? host.querySelector('#' + (window.CSS ? CSS.escape(id) : id))
+    : null;
+  if (el) el.remove();
+}
+
+// Reminder that a setting change (buffer / GPU) only applies on the next
+// stream start. Shown only while something is live — nothing to restart
+// otherwise. Thin wrapper over the generic notice above.
+function notifyRestartNeeded() {
+  if (!livePlaybackTarget) return;
+  showNotice({
+    id: 'restart-needed',
+    message: 'Setting changed — restart the stream for it to take effect.',
+    actionLabel: '↺ Restart stream',
+    onAction: () => { dismissNotice('restart-needed'); restartStream(); },
+  });
 }
 
 function refreshPlaybackMoveButton() {
@@ -2791,6 +2858,7 @@ async function toggleDesktopEntry() {
         api('/api/config', {
           method: 'POST', body: JSON.stringify({ buffer_secs: n }),
         }).catch(() => {});
+        notifyRestartNeeded();   // buffer change applies on next stream start
       };
     }
   }
