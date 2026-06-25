@@ -1,8 +1,9 @@
 # aceman
 
 Watch [Ace Stream](https://acestream.org) content from a **sandboxed
-engine** — rootless Podman container, a browser UI, and a host-side
-allow-list broker so the web never touches `podman` directly.
+engine** — rootless Podman container, management and playback via browser UI and its player running python web application or delegation of playback to your own Linux VLC/MPV players (flatpack supported). Host-side
+allow-list broker so the web never touches `podman` or anything host related directly. Brought to you by security concious myself, who also doesn't want to guess what's running on my machines.
+I don't ship binaries or docker images, I don't issue releases  - what you see is what you get. Inspect, Build and Run.
 
 [Support on Patreon](https://www.patreon.com/cw/curiousconcept)
 
