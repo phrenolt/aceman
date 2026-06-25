@@ -1600,7 +1600,12 @@ function refreshPlayButton() {
   btn.setAttribute('aria-label', v.ariaLabel);
   btn.classList.toggle('playing', v.playingClass);
   const rbtn = $('restream-btn');
-  if (rbtn) rbtn.style.display = livePlaybackTarget === 'browser' ? '' : 'none';
+  // Show the restart (↺) button whenever anything is live — browser OR
+  // external. restartStream() handles both: for external it stops the
+  // host player and re-fires acestream://, which relaunches VLC/mpv with
+  // the current buffer_secs. Restart is how a changed buffer/GPU setting
+  // takes effect.
+  if (rbtn) rbtn.style.display = livePlaybackTarget ? '' : 'none';
 }
 
 async function restartStream() {
