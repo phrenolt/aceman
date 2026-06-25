@@ -72,15 +72,15 @@ pause
 exit /b
 
 :ready
-:: resolve the wsl path of setup.sh sitting next to this .bat
-for /f "delims=" %%i in ('wsl wslpath -a "%~dp0setup.sh"') do set "SH=%%i"
+:: resolve the wsl path of setup.sh in internal/
+for /f "delims=" %%i in ('wsl wslpath -a "%~dp0internal\setup.sh"') do set "SH=%%i"
 
 :: strip CRLF and run as root inside Ubuntu
 wsl -d Ubuntu -u root -- bash -c "tr -d '\r' < '%SH%' | bash"
 
 :: create the Windows Desktop shortcut (arg = run silently, no extra pause)
 echo Creating Desktop shortcut...
-call "%~dp0shortcut.bat" silent
+call "%~dp0internal\shortcut.bat" silent
 
 :: setup.sh wrote /etc/wsl.conf (systemd=true + default user). Those only
 :: apply on a fresh boot of the distro, so shut it down now - the next
