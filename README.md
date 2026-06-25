@@ -1,9 +1,10 @@
 # aceman
 
 Watch [Ace Stream](https://acestream.org) content from a **sandboxed
-engine** — rootless Podman container, management and playback via browser UI and its player running python web application or delegation of playback to your own Linux VLC/MPV players (flatpack supported). Host-side
-allow-list broker so the web never touches `podman` or anything host related directly. Brought to you by security concious myself, who also doesn't want to guess what's running on my machines.
-I don't ship binaries or docker images, I don't issue releases  - what you see is what you get. Inspect, Build and Run.
+engine** — a rootless Podman container, managed and played through a
+browser UI (a stdlib-Python web app), or with playback delegated to your
+own Linux VLC/mpv (Flatpak supported). A host-side allow-list broker means
+the web never touches `podman` or anything host-related directly.
 
 [Support on Patreon](https://www.patreon.com/cw/curiousconcept)
 
@@ -128,22 +129,23 @@ the security model — see [`docs/security.md`](docs/security.md).
 
 ## Motivation
 
-I wanted a **safe project with minimal dependencies** — one that isn't
-exposed to supply-chain attacks through a sprawling dependency tree. So
-aceman is built on **vanilla technologies**: standard-library Python, plain
-shell, and dependency-free vanilla JavaScript, with the few unavoidable
-third-party pieces vendored, version-pinned, and hash-checked.
+Built by someone security-conscious who doesn't want to guess what's
+running on their machines. So aceman is a **safe project with minimal
+dependencies** — not exposed to supply-chain attacks through a sprawling
+dependency tree. It's built on **vanilla technologies**: standard-library
+Python, plain shell, and dependency-free vanilla JavaScript, with the few
+unavoidable third-party pieces vendored, version-pinned, and hash-checked.
 
-It also exists to **wrap the Ace Stream engine at arm's length**. The
-engine stays a separate, sandboxed, untrusted component behind a host-side
-allow-list — so the project is insulated against future changes to the
-engine, and keeps working even if upstream shifts, the original authors
-move on, or the surrounding ecosystem falls into disarray. Few moving
-parts, all readable, nothing that rots quietly.
+**No binaries, no Docker images, no releases — what you see is what you
+get: inspect, build, run.** And **Podman, not Docker** — rootless and
+daemonless, so there's no privileged root daemon to trust or to attack.
 
-And of course **Podman, not Docker** — rootless and daemonless, so there's
-no privileged root daemon to trust or to attack. It fits the same
-minimal-trust principle the rest of the project is built on.
+It also wraps the Ace Stream engine **at arm's length**: the engine stays a
+separate, sandboxed, untrusted component behind a host-side allow-list — so
+the project is insulated against future changes to the engine, and keeps
+working even if upstream shifts, the original authors move on, or the
+surrounding ecosystem falls into disarray. Few moving parts, all readable,
+nothing that rots quietly.
 
 ## License
 
