@@ -100,7 +100,10 @@ Deliberately small — beyond what your OS already ships, this is the whole list
   [`web/vendor/README.md`](web/vendor/README.md).
 
 **Optional:**
-- **VLC** or **mpv** — only for the external-player path, not browser playback.
+- **VLC** or **mpv** — only for the external-player path. In-browser
+  playback needs no player, but the web UI's Play links can also
+  **delegate** to an external player (via the `acestream://` handler), the
+  same external-player path the `aceman` CLI uses.
 
 **Our** code adds no `pip install`, no `npm install`, no lock files — the
 web and broker are stdlib-Python only, and the host footprint is Podman
