@@ -89,8 +89,11 @@ Deliberately small — beyond what your OS already ships, this is the whole list
 - *aceman-web* image (`python:3.11-slim`): **ffmpeg** for the in-browser
   stream transcode, plus `mesa-va-drivers` / `libva-drm2` /
   `mesa-vulkan-drivers` for GPU-accelerated ffmpeg.
-- *engine* image (`ubuntu:22.04`): `python3` + a few `python3-*` libs and
-  `pycryptodome`, plus the **Ace Stream engine tarball you supply**.
+- *engine* image (`ubuntu:22.04`): `python3` plus the engine's own runtime
+  libs — via **apt**: `python3-apsw`, `python3-lxml`, `python3-nacl`,
+  `python3-setuptools`; via **pip (pinned)**: `pycryptodome==3.20.0` (pip
+  is removed from the image afterwards). Plus the **Ace Stream engine
+  tarball you supply**. These are the *engine's* dependencies, not ours.
 
 **Vendored in-tree (version-pinned + SHA-256 checked):**
 - **mpegts.js** (Apache-2.0) — browser playback. See
@@ -99,8 +102,10 @@ Deliberately small — beyond what your OS already ships, this is the whole list
 **Optional:**
 - **VLC** or **mpv** — only for the external-player path, not browser playback.
 
-No `pip install`, no `npm install`, no lock files — the host footprint is
-Podman plus a couple of shell tools.
+**Our** code adds no `pip install`, no `npm install`, no lock files — the
+web and broker are stdlib-Python only, and the host footprint is Podman
+plus a couple of shell tools. The single pinned `pip install` above is the
+*engine image's* exception, for the proprietary engine's own runtime.
 
 ## Documentation
 
