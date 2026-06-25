@@ -30,7 +30,8 @@ from .broker_client import (
     PlayersBrokerClient,
     WebBrokerClient,
 )
-from .favourites import Config, FavStore
+from .config_store import Config
+from .favourites import FavStore
 from .heartbeat import HeartbeatTracker
 from .history import HistoryStore
 from .search import SearchProxy
