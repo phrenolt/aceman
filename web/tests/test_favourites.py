@@ -19,7 +19,8 @@ import sqlite3
 import tempfile
 import unittest
 
-from aceman.favourites import Config, DuplicateCidError, FavStore
+from aceman.config_store import Config
+from aceman.favourites import DuplicateCidError, FavStore
 
 
 CID_A = "a" * 40
