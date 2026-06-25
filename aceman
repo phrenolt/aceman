@@ -72,6 +72,17 @@ ENGINE="${ACE_ENGINE:-http://127.0.0.1:6878}"
 ACE_NAME="${ACE_NAME:-ace}"
 SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
 
+# Per-invocation log. Plays triggered from the web UI / acestream:// desktop
+# handler send stdout to the launcher (not a terminal), so this file is
+# where to look — it records the resolved player command including the
+# buffer flags. Tail it:  tail -f ~/.cache/aceman/aceman.log
+ACE_LOG_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/aceman"
+ace_log() {
+    mkdir -p "$ACE_LOG_DIR" 2>/dev/null || true
+    printf '%s aceman[%d]: %s\n' "$(date '+%F %T')" "$$" "$*" \
+        >> "$ACE_LOG_DIR/aceman.log" 2>/dev/null || true
+}
+
 # Player resolution order:
 #   1. $ACE_PLAYER + $ACE_PLAYER_SOURCE  — explicit env override
 #   2. config.json:default_player + :default_player_source — web UI
@@ -95,6 +106,11 @@ else
     PLAYER="vlc"
     PLAYER_SOURCE=""
 fi
+# Capture the buffer slider (config.json:buffer_secs) NOW, while the cfg
+# helper still exists — it's unset just below, but the buffer flags are
+# applied to PLAYER_CMD much later.
+BUFFER_SECS="$(_resolve_cfg_string buffer_secs || echo 0)"
+case "$BUFFER_SECS" in ''|*[!0-9]*) BUFFER_SECS=0 ;; esac
 unset -f _resolve_cfg_string
 FAV_FILE="${ACE_FAVORITES:-${XDG_CONFIG_HOME:-$HOME/.config}/aceman/favorites}"
 
@@ -949,21 +965,27 @@ trap cleanup EXIT INT TERM
 # — no hunting through their preference menus. P2P live streams jitter; a
 # few seconds of cache rides that out. Only system/Flatpak vlc & mpv have
 # known flags; a custom $ACE_PLAYER is left untouched.
-_buf="$(_resolve_cfg_string buffer_secs || true)"
-case "$_buf" in ''|*[!0-9]*) _buf=0 ;; esac
-if [ "$_buf" -gt 0 ]; then
+if [ "$BUFFER_SECS" -gt 0 ]; then
     case "$PLAYER" in
         *mpv*)
-            PLAYER_CMD+=(--cache=yes --cache-secs="$_buf" \
-                        --demuxer-readahead-secs="$_buf")
+            PLAYER_CMD+=(--cache=yes --cache-secs="$BUFFER_SECS" \
+                        --demuxer-readahead-secs="$BUFFER_SECS")
+            ace_log "buffer ${BUFFER_SECS}s applied to mpv"
             ;;
         *vlc*)
-            _ms=$(( _buf * 1000 ))
+            _ms=$(( BUFFER_SECS * 1000 ))
             PLAYER_CMD+=(--network-caching="$_ms" --live-caching="$_ms")
+            ace_log "buffer ${BUFFER_SECS}s (${_ms}ms) applied to vlc"
+            ;;
+        *)
+            ace_log "buffer ${BUFFER_SECS}s set, but player '$PLAYER' has no known cache flag"
             ;;
     esac
+else
+    ace_log "buffer disabled (buffer_secs=$BUFFER_SECS)"
 fi
 
+ace_log "playing $playback_url with ${PLAYER_CMD[*]}"
 echo "aceman: playing $playback_url with ${PLAYER_CMD[*]}"
 # Background the player + `wait` so SIGTERM to this script (sent by a
 # later aceman invocation's acquire_active_session) interrupts the
