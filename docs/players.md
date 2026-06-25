@@ -14,32 +14,32 @@ of network caching looks like.
 > their menus. The manual flags below are only needed if you launch a
 > player yourself, outside aceman.
 
-> **Buffer = Off does *not* mean zero.** At 0 the slider passes **no**
-> caching flag, so the external player falls back to its **own** saved
-> setting — e.g. VLC's *Network caching* preference (which may be 30 s if
-> you've set that), not 0. Off means "don't override the player," not "no
-> buffer." To force a specific cushion, set the slider above 0; to truly
-> minimise, also lower the player's own caching.
+> **Buffer = Off does *not* mean zero.** At 0 the slider sends **no**
+> caching flag, so the external player keeps its **own** saved setting —
+> e.g. VLC's *Network caching* (which may be 30 s if you set it), not 0.
+> Off means "don't change the player's setting," not "no buffer." To set a
+> specific buffer, move the slider above 0; to make it small, also lower
+> the player's own caching.
 
-### A caveat for *live* streams (mpv differs)
+### Live streams: mpv works differently
 
-A buffer is built one of two ways: **read ahead** of the playhead, or
-**hold the playhead behind** the live edge. They behave very differently on
-live P2P streams, where the only data ahead of "now" is whatever the engine
-has already produced (a few seconds):
+There are two ways to build a buffer: **load ahead** of where you're
+watching, or **play a few seconds behind live**. On live P2P streams these
+behave very differently, because the only data past "now" is the few
+seconds the engine has already downloaded:
 
-- **In-browser player** and **VLC** build the cushion by *holding back /
-  adding latency* (`--network-caching` makes VLC play behind live). They get
-  the **full** buffer you set, even on live.
-- **mpv** only *reads ahead* (`--demuxer-readahead-secs`) and keeps playing
-  at the live edge — so on a **live** stream its cache caps at the engine's
-  serve-ahead window (~seconds) no matter how high you set the buffer. The
-  flags are correct; the future data simply doesn't exist yet to read.
+- **Browser player** and **VLC** play a few seconds behind live (for VLC,
+  `--network-caching` adds that delay). They get the **full** buffer you
+  set, even on live.
+- **mpv** only loads ahead (`--demuxer-readahead-secs`) and keeps playing
+  at the live point — so on a **live** stream its buffer can't go past the
+  few seconds the engine has ready, no matter how high you set it. The
+  flags are right; the data just isn't there yet to load.
 
-So **mpv will not produce the same live cushion as the browser or VLC.** On
+So **mpv won't give the same live buffer as the browser or VLC.** On
 **seekable** content (`.acelive` recordings, transport URLs) all three fill
-to the value you set — the limit is specific to *live*. If a large live
-cushion matters, prefer the **browser player** or **VLC**.
+to the value you set — this limit is live-only. For a big live buffer, use
+the **browser player** or **VLC**.
 
 ## VLC
 
