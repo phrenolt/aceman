@@ -13,9 +13,9 @@ I don't ship binaries or docker images, I don't issue releases  - what you see i
 |-----------------------------------------|:-----:|:------------------------:|:-----:|
 | Sandboxed engine (rootless Podman)      |  ✅   | ✅ (inside WSL)          |  —    |
 | Web UI (browser playback)               |  ✅   | ✅ (served to Windows)   |  —    |
-| External-player CLI (`aceman` + VLC/mpv)|  ✅   | ⚠️ no GPU in WSL — use web|  —    |
-| `acestream://` desktop handler          |  ✅   | ❌ (use the web UI)      |  —    |
-| GPU / VA-API acceleration               |  ✅   | ❌ (broken under WSL)    |  —    |
+| External-player CLI (`aceman` + VLC/mpv)|  ✅   | ✅ via `get_url_stream` → Windows VLC/mpv (GPU) |  —    |
+| `acestream://` desktop handler          |  ✅   | ✅ opt-in (`register-handler`) |  —    |
+| GPU / VA-API acceleration               |  ✅   | encode ❌ (no VA-API in WSL) · decode ✅ (Windows browser/player) |  —    |
 | One-click installer                     |  manual |  ✅ `wsl/install.bat`   |  —    |
 
 ## Quick start
@@ -23,8 +23,10 @@ I don't ship binaries or docker images, I don't issue releases  - what you see i
 ### Linux
 
 Requires rootless **Podman ≥ 4.0**, **Python ≥ 3.9** (stdlib only),
-**bash ≥ 4**, **curl** + **jq**, and a player (**VLC ≥ 3.0** or
-**mpv ≥ 0.34**) for the CLI path.
+**bash ≥ 4**, and **curl** + **jq**. The web UI plays in your **browser**,
+so **no media player is required**. A player (**VLC ≥ 3.0** or
+**mpv ≥ 0.34**) is *optional* — only for the external-player CLI path
+(`./aceman`), as an alternative to browser playback.
 
 ```bash
 git clone https://github.com/curiousconcept/aceman.git
@@ -71,6 +73,33 @@ hands a stream URL to your player. Full steps:
 ### macOS
 
 _Not supported yet._
+
+## Dependencies
+
+Deliberately small — beyond what your OS already ships, this is the whole list:
+
+**On the host (installed once):**
+- **Podman** (rootless) — the container runtime.
+- **git**, **curl**, **jq** — used by the shell wrappers; usually already
+  present on desktop Linux. On WSL, `install.bat` installs `podman git jq`
+  for you.
+
+**Inside the container images (built locally — nothing else touches your host):**
+- *aceman-web* image (`python:3.11-slim`): **ffmpeg** for the in-browser
+  stream transcode, plus `mesa-va-drivers` / `libva-drm2` /
+  `mesa-vulkan-drivers` for GPU-accelerated ffmpeg.
+- *engine* image (`ubuntu:22.04`): `python3` + a few `python3-*` libs and
+  `pycryptodome`, plus the **Ace Stream engine tarball you supply**.
+
+**Vendored in-tree (version-pinned + SHA-256 checked):**
+- **mpegts.js** (Apache-2.0) — browser playback. See
+  [`web/vendor/README.md`](web/vendor/README.md).
+
+**Optional:**
+- **VLC** or **mpv** — only for the external-player path, not browser playback.
+
+No `pip install`, no `npm install`, no lock files — the host footprint is
+Podman plus a couple of shell tools.
 
 ## Documentation
 
