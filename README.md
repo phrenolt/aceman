@@ -2,7 +2,7 @@
   <img src="broker/assets/aceman.png" alt="aceman" width="140">
 </p>
 
-# aceman
+<h1 align="center">aceman</h1>
 
 Watch [Ace Stream](https://acestream.org) content from a **sandboxed
 engine** — a rootless Podman container, managed and played through a
