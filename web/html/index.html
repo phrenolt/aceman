@@ -234,7 +234,7 @@
         </label>
       </div>
       <div class="field" id="buffer-field"
-           title="Only affects the in-tab browser player. Holds playback this many seconds behind the live edge, building a cushion so a brief engine/network hiccup doesn't stall the video. Higher = more delay, fewer stalls. 0 (Off) plays at the live edge as before. Applies on the next Play.">
+           title="Seconds of buffer so a short network/engine hiccup doesn't stall the video. Applies to BOTH the browser player and the external player (VLC/mpv). Higher = starts later but stalls less. Off (0) does NOT mean zero — the external player just keeps its own caching setting (e.g. VLC's saved Network caching). On LIVE streams: browser and VLC play a few seconds behind live and get the full buffer; mpv only loads ahead, so it can't buffer more than the few seconds the engine has ready. Applies on the next Play / Restart.">
         <label class="field-label" for="playback-buffer">Buffer</label>
         <input type="range" id="playback-buffer" min="0" max="60" step="1" value="0"
                style="flex:1; min-width:0">
@@ -341,17 +341,20 @@
 
       <div class="setup-row">
         <div class="logs-tabs">
-          <button class="logs-tab" data-kind="web">
+          <button class="logs-tab" data-kind="web"
+                  title="The web server's log file: ~/.cache/aceman/web.log">
             <strong>Server logs</strong>
             <span class="status" data-role="logs-status"></span>
             <span class="logs-toggle" data-role="logs-toggle" title="Pause auto-refresh">⏸</span>
           </button>
-          <button class="logs-tab" data-kind="broker">
+          <button class="logs-tab" data-kind="broker"
+                  title="The host broker's log file: ~/.cache/aceman/broker.log">
             <strong>Broker logs</strong>
             <span class="status" data-role="logs-status"></span>
             <span class="logs-toggle" data-role="logs-toggle" title="Pause auto-refresh">⏸</span>
           </button>
-          <button class="logs-tab" data-kind="engine">
+          <button class="logs-tab" data-kind="engine"
+                  title="The engine container's live output (via 'podman logs ace') — not a file on disk">
             <strong>Engine logs</strong>
             <span class="status" data-role="logs-status"></span>
             <span class="logs-toggle" data-role="logs-toggle" title="Pause auto-refresh">⏸</span>
