@@ -107,7 +107,8 @@ from aceman.broker_client import (
     WebBrokerClient,
 )
 from aceman.search import SearchError, _NoRedirectHandler, SearchProxy
-from aceman.favourites import Config, DuplicateCidError, FavStore
+from aceman.config_store import Config
+from aceman.favourites import DuplicateCidError, FavStore
 from aceman.history import HistoryStore
 from aceman.desktop_helpers import _desktop_quote_arg
 from aceman.context import RouteContext

@@ -126,7 +126,7 @@ class BrowsersRouteTests(unittest.TestCase):
 class ConfigRouteTests(unittest.TestCase):
     def setUp(self):
         import pathlib, tempfile
-        from aceman.favourites import Config
+        from aceman.config_store import Config
         self._tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self._tmp.cleanup)
         self.config = Config(pathlib.Path(self._tmp.name) / "cfg.json")
