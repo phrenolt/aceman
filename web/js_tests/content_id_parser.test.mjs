@@ -3,7 +3,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parseId, HEX40 } from '../js/lib/playback/content_id_parser.js';
+import { parseId, HEX40 } from '../js/domains/playback/lib/content_id_parser.js';
 
 const FOURTY = 'a'.repeat(40);
 

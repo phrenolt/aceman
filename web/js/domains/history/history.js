@@ -15,7 +15,7 @@
 import { $, showBusy, hideBusy } from '../../shared/dom.js';
 import { api } from '../../shared/api.js';
 import { formatSqliteUtcToLocal } from './lib/sqlite_time.js';
-import { findFavouriteByCid } from '../../lib/favourites/favourite_lookup.js';
+import { findFavouriteByCid } from '../favourites/lib/favourite_lookup.js';
 import { allFavs, instaSave } from '../favourites/favourites.js';
 import { play, alignSearchToInput } from '../playback/playback.js';
 import { mode } from '../../shared/runtime.js';

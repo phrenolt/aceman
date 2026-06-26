@@ -12,7 +12,7 @@
 //
 // Pure. No DOM, no globals.
 
-import { findFavouriteByCid } from '../../../lib/favourites/favourite_lookup.js';
+import { findFavouriteByCid } from '../../favourites/lib/favourite_lookup.js';
 
 export function resolveDisplayName(opts, favs, cid) {
   const o = opts || {};

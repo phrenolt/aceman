@@ -18,7 +18,7 @@ import { createBrowserFavouritesStore } from './lib/browser_favourites_store.js'
 import { daysSinceLabel } from './lib/last_watched_label.js';
 import { uniqueFavouriteName } from './lib/favourite_names.js';
 import { describeSaveButton } from './lib/save_favourite_button.js';
-import { findFavouriteByCid } from '../../lib/favourites/favourite_lookup.js';
+import { findFavouriteByCid } from './lib/favourite_lookup.js';
 import { extractExistingName } from './lib/api_errors.js';
 import { paginate } from '../../lib/pagination.js';
 import { runModal } from '../../lib/modal.js';

@@ -1,12 +1,14 @@
 // Bootstrap: wires the DOM to the domains and runs init. Pure logic
 // belongs in a lib module (tested under web/js_tests/), not here.
-import { parseId } from './lib/playback/content_id_parser.js';
+import { parseId } from './domains/playback/lib/content_id_parser.js';
 import { $, showError, showConfirm, showBusy, hideBusy } from './shared/dom.js';
 import { api } from './shared/api.js';
 import { mountAcemanSelect } from './shared/dropdown.js';
 import { openResetModal, closeResetModal, runFactoryReset } from './domains/factory-reset/factory_reset.js';
 import { initGpuCard, buildGpuParams, gpuEncodeLabel } from './domains/gpu/gpu.js';
 import { refreshImageStatus, installImage, uninstallImage } from './domains/image/image.js';
+import { initContainerMemory } from './domains/container-memory/container_memory.js';
+import { initLogs } from './domains/logs/logs.js';
 import { refreshDesktopEntry, toggleDesktopEntry } from './domains/desktop/desktop_entry.js';
 import { loadPlayers, loadBrowsers, detectCurrentBrowser,
          detectedPlayers, detectedBrowsers, _currentBrowserName } from './domains/playback/detection.js';
@@ -129,58 +131,7 @@ import { mode, isWslMode, setMode, setWslMode } from './shared/runtime.js';
   refreshEngineStatus();
   setInterval(refreshEngineStatus, 4000);
 
-  // Container memory row (below Lifecycle buttons) — polls both web and
-  // engine containers every 8 s. Each cell hides itself when unavailable.
-  const MEM_WARN_BYTES = 100 * 1024 * 1024;
-  const _fmtBytes = (b) => {
-    if (b >= 1024 ** 3) return (b / 1024 ** 3).toFixed(2) + ' GiB';
-    if (b >= 1024 ** 2) return (b / 1024 ** 2).toFixed(0) + ' MiB';
-    if (b >= 1024)      return (b / 1024).toFixed(0) + ' KiB';
-    return b + ' B';
-  };
-  const _applyMemCell = (cellId, displayId, hintId, envKey, data) => {
-    const cell = $(cellId);
-    if (!cell) return;
-    if (!data.available) { cell.style.display = 'none'; return; }
-    const display = $(displayId);
-    const hint    = $(hintId);
-    if (display) display.textContent = `${_fmtBytes(data.mem_bytes)} / ${_fmtBytes(data.limit_bytes)}`;
-    const nearLimit = data.limit_bytes > 0 &&
-                      (data.limit_bytes - data.mem_bytes) < MEM_WARN_BYTES;
-    cell.classList.toggle('mem-cell-warn', nearLimit);
-    if (hint) {
-      hint.textContent = nearLimit ? `— consider raising ${envKey}` : '';
-      hint.style.display = nearLimit ? '' : 'none';
-    }
-    // Tooltip on the label span shows the current limit.
-    const label = cell.querySelector('.tip');
-    if (label && data.limit_bytes > 0) {
-      const cur = _fmtBytes(data.limit_bytes);
-      const cfgFile = '~/.config/aceman/env';
-      label.dataset.tip =
-        `Current limit: ${cur}\nTo change: add ${envKey}=2g to ${cfgFile}\nthen restart.`;
-    }
-    cell.style.display = '';
-  };
-  const refreshContainerMemory = async () => {
-    const row = $('container-mem-row');
-    if (!row) return;
-    try {
-      const [webMem, engMem] = await Promise.all([
-        fetch('/api/web/memory').then(r => r.json()),
-        fetch('/api/engine/memory').then(r => r.json()),
-      ]);
-      _applyMemCell('web-mem-cell', 'web-mem-display', 'web-mem-hint', 'ACE_WEB_MEMORY', webMem);
-      _applyMemCell('eng-mem-cell', 'eng-mem-display', 'eng-mem-hint', 'ACE_MEMORY',     engMem);
-      const anyVisible = ($('web-mem-cell') && $('web-mem-cell').style.display !== 'none')
-                      || ($('eng-mem-cell') && $('eng-mem-cell').style.display !== 'none');
-      row.style.display = anyVisible ? 'flex' : 'none';
-    } catch (_) {
-      if (row) row.style.display = 'none';
-    }
-  };
-  refreshContainerMemory();
-  setInterval(refreshContainerMemory, 8000);
+  initContainerMemory();
 
   // The Play button toggles ▶ (idle) / ⏹ (playing anywhere — this tab,
   // another browser, vlc, mpv). Stop tears down the in-browser proxy
@@ -417,141 +368,7 @@ import { mode, isWslMode, setMode, setWslMode } from './shared/runtime.js';
     setTimeout(ping, 1200);  // give old enough time to release the port
   };
 
-  // ---- logs tabs (single viewer, one stream at a time) ------------------
-  // Three tabs share one viewer: clicking a tab opens it and polls that
-  // stream; clicking the active tab closes it. Each tab shows its log
-  // size via a one-shot fetch when the viewer opens.
-  let activeLogsKind = null;
-  let logsTimer = null;
-  // Explicit ⏸ pause for the active tab.
-  let activeLogsPaused = false;
-  // Auto-pause while the user has text selected in the viewer. Separate
-  // from activeLogsPaused so the ⏸ button stays an explicit override.
-  let logsViewerAutoPaused = false;
-  const logsViewer = $('logs-viewer');
-  const logsTabs = Array.from(document.querySelectorAll('.logs-tab'));
-
-  function findTab(kind) { return logsTabs.find(t => t.dataset.kind === kind); }
-
-  function setToggleGlyph(tab, paused) {
-    const t = tab && tab.querySelector('[data-role="logs-toggle"]');
-    if (!t) return;
-    t.textContent = paused ? '▶' : '⏸';
-    t.title = paused ? 'Resume auto-refresh' : 'Pause auto-refresh';
-  }
-
-  async function updateLogsStatus(kind) {
-    const tab = findTab(kind);
-    if (!tab) return;
-    const status = tab.querySelector('[data-role="logs-status"]');
-    try {
-      // lines=1: we only want size_bytes + available for the indicator.
-      const r = await api('/api/logs?lines=1&kind=' + encodeURIComponent(kind));
-      const kb = (r.size_bytes / 1024).toFixed(1);
-      status.textContent = r.available ? `${kb} KB` : '(no log)';
-      status.className = 'status';
-    } catch (_) {
-      status.textContent = '(fetch failed)';
-      status.className = 'status bad';
-    }
-  }
-
-  async function refreshActiveLogs() {
-    if (!activeLogsKind) return;
-    const tab = findTab(activeLogsKind);
-    const status = tab.querySelector('[data-role="logs-status"]');
-    try {
-      const r = await api('/api/logs?lines=300&kind=' + encodeURIComponent(activeLogsKind));
-      const wasAtBottom = logsViewer.scrollHeight - logsViewer.scrollTop
-                          - logsViewer.clientHeight < 30;
-      logsViewer.textContent = (r.tail || '(log is empty — no activity yet)').replace(/\\u000a/g, '\n');
-      if (wasAtBottom) logsViewer.scrollTop = logsViewer.scrollHeight;
-      const kb = (r.size_bytes / 1024).toFixed(1);
-      status.textContent = r.available ? `${kb} KB` : '(no log)';
-      // Neutral gray — size is informational, not a health signal.
-      status.className = 'status';
-    } catch (_) {
-      status.textContent = '(fetch failed)';
-      status.className = 'status bad';
-    }
-  }
-
-  function openLogsTab(kind) {
-    if (logsTimer) { clearInterval(logsTimer); logsTimer = null; }
-    activeLogsKind = kind;
-    activeLogsPaused = false;
-    logsViewerAutoPaused = false;
-    logsViewer.classList.remove('viewer-paused');
-    for (const t of logsTabs) t.classList.toggle('active', t.dataset.kind === kind);
-    setToggleGlyph(findTab(kind), false);
-    logsViewer.style.display = '';
-    refreshActiveLogs();
-    logsTimer = setInterval(refreshActiveLogs, 2500);
-    for (const t of logsTabs) {
-      if (t.dataset.kind !== kind) updateLogsStatus(t.dataset.kind);
-    }
-  }
-
-  function closeLogsTabs() {
-    if (logsTimer) { clearInterval(logsTimer); logsTimer = null; }
-    activeLogsKind = null;
-    activeLogsPaused = false;
-    logsViewerAutoPaused = false;
-    logsViewer.classList.remove('viewer-paused');
-    for (const t of logsTabs) t.classList.remove('active');
-    logsViewer.style.display = 'none';
-  }
-
-  function toggleActiveLogsPaused() {
-    if (!activeLogsKind) return;
-    activeLogsPaused = !activeLogsPaused;
-    if (!activeLogsPaused) {
-      logsViewerAutoPaused = false;
-      logsViewer.classList.remove('viewer-paused');
-    }
-    setToggleGlyph(findTab(activeLogsKind), activeLogsPaused);
-    if (activeLogsPaused) {
-      if (logsTimer) { clearInterval(logsTimer); logsTimer = null; }
-    } else {
-      refreshActiveLogs();
-      logsTimer = setInterval(refreshActiveLogs, 2500);
-    }
-  }
-
-  for (const tab of logsTabs) {
-    tab.addEventListener('click', (e) => {
-      // The ⏸ sub-control toggles polling without closing the tab.
-      // stopPropagation keeps the parent click from re-opening it.
-      const toggle = e.target.closest('[data-role="logs-toggle"]');
-      if (toggle && activeLogsKind === tab.dataset.kind) {
-        e.stopPropagation();
-        toggleActiveLogsPaused();
-        return;
-      }
-      if (activeLogsKind === tab.dataset.kind) closeLogsTabs();
-      else openLogsTab(tab.dataset.kind);
-    });
-    updateLogsStatus(tab.dataset.kind);
-  }
-
-  // Auto-pause on click inside the viewer so a refresh doesn't clobber
-  // a text selection.
-  logsViewer.addEventListener('mousedown', () => {
-    if (!activeLogsKind || activeLogsPaused) return;
-    logsViewerAutoPaused = true;
-    logsViewer.classList.add('viewer-paused');
-    toggleActiveLogsPaused();
-  });
-
-  // Resume on click outside the viewer (the ⏸ toggle handles itself).
-  document.addEventListener('mousedown', (e) => {
-    if (!logsViewerAutoPaused) return;
-    if (logsViewer.contains(e.target)) return;
-    if (e.target.closest('[data-role="logs-toggle"]')) return;
-    logsViewerAutoPaused = false;
-    logsViewer.classList.remove('viewer-paused');
-    if (activeLogsPaused) toggleActiveLogsPaused();
-  });
+  initLogs();
 
   $('factory-reset').onclick = openResetModal;
   $('reset-cancel').onclick = closeResetModal;

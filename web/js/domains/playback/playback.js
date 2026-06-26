@@ -23,7 +23,7 @@
 import { $, showError, showConfirm, showBusy, hideBusy } from '../../shared/dom.js';
 import { api } from '../../shared/api.js';
 import { showNotice, dismissNotice } from '../../shared/notice.js';
-import { parseId } from '../../lib/playback/content_id_parser.js';
+import { parseId } from './lib/content_id_parser.js';
 import { EngineStatusState } from './lib/engine/engine_state.js';
 import { encodeTarget, isExternal } from './lib/playback_target.js';
 import { KEYS } from '../../lib/storage_keys.js';

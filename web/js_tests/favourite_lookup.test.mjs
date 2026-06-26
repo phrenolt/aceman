@@ -2,7 +2,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { findFavouriteByCid } from '../js/lib/favourites/favourite_lookup.js';
+import { findFavouriteByCid } from '../js/domains/favourites/lib/favourite_lookup.js';
 
 const CID_A = 'a'.repeat(40);
 const CID_B = 'b'.repeat(40);
