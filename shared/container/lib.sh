@@ -1,7 +1,7 @@
-# container/lib.sh — shared shell helpers for the aceman wrappers.
+# shared/container/lib.sh — shared shell helpers for the aceman wrappers.
 #
-# Sourced by aceman, aceman_web, container/engine/run-container.sh, and
-# container/aceman-web/run-web-container.sh. One file keeps the
+# Sourced by aceman, aceman_web, engine/container/run-container.sh, and
+# web/container/run-web-container.sh. One file keeps the
 # WSL-detection regex, port/size validators, image-build flow, and
 # shared-network plumbing in one place so the four wrappers can't drift
 # apart on details that have to agree (e.g. "what counts as WSL", "is
@@ -161,8 +161,16 @@ _ensure_podman_image() {
     local label_args=()
     [ "$dirty" = 0 ] && [ -n "$want_sha" ] \
         && label_args=(--label "aceman.commit=$want_sha")
+    # Bake the build identity into the WEB image so the in-page `dbg`
+    # overlay can show the commit regardless of launch path (the broker
+    # recreate doesn't carry a runtime env). Web-only so the engine build
+    # doesn't warn about ARGs it doesn't declare.
+    local build_args=()
+    [ "$label" = "web" ] \
+        && build_args=(--build-arg "ACEMAN_COMMIT=$want_sha"
+                       --build-arg "ACEMAN_DIRTY=$dirty")
     ( cd "$ctx" && podman build -t "$tag" -f "$cf" \
-        "${label_args[@]}" . ) >&2 || {
+        "${label_args[@]}" "${build_args[@]}" . ) >&2 || {
         echo "$prog: $label image build failed; see output above" >&2
         return 1
     }
@@ -189,20 +197,20 @@ _extract_commit_tree() {
     fi
     # Engine tarball is .gitignored. Copy from the running checkout so
     # the engine image build at this commit has something to extract.
-    if [ -f "$root/container/engine/dist/engine.tar.gz" ]; then
-        mkdir -p "$tmp/container/engine/dist"
-        cp "$root/container/engine/dist/engine.tar.gz" \
-           "$tmp/container/engine/dist/engine.tar.gz"
+    if [ -f "$root/engine/container/dist/engine.tar.gz" ]; then
+        mkdir -p "$tmp/engine/container/dist"
+        cp "$root/engine/container/dist/engine.tar.gz" \
+           "$tmp/engine/container/dist/engine.tar.gz"
     fi
     printf '%s' "$tmp"
 }
 
 # Ensure the engine container image is present and labelled with the
-# desired commit. Build context is container/engine/.
+# desired commit. Build context is engine/container/.
 ensure_engine_image() {
     local root="${ACELIB_PROJECT_ROOT:?ACELIB_PROJECT_ROOT must be set}"
     local tag="${ACE_IMAGE:-localhost/acestream:vetted}"
-    local ctx="$root/container/engine"
+    local ctx="$root/engine/container"
     local cf="$ctx/Containerfile"
     local pre="$ctx/dist/engine.tar.gz"
     local hint="download from acestream.media and place it at the path above, then re-run."
@@ -214,8 +222,8 @@ ensure_engine_image() {
         tmp="$(_extract_commit_tree "$sha")" || return 1
         local rc=0
         ACE_COMMIT="$sha" _ensure_podman_image \
-            "$tag" "$tmp/container/engine" "$tmp/container/engine/Containerfile" \
-            "engine" "$tmp/container/engine/dist/engine.tar.gz" "$hint" \
+            "$tag" "$tmp/engine/container" "$tmp/engine/container/Containerfile" \
+            "engine" "$tmp/engine/container/dist/engine.tar.gz" "$hint" \
             || rc=$?
         rm -rf "$tmp"
         return "$rc"
@@ -229,7 +237,7 @@ ensure_engine_image() {
 ensure_web_image() {
     local root="${ACELIB_PROJECT_ROOT:?ACELIB_PROJECT_ROOT must be set}"
     local tag="${ACE_WEB_IMAGE:-localhost/aceman-web:vetted}"
-    local cf="$root/container/aceman-web/Containerfile.web"
+    local cf="$root/web/container/Containerfile.web"
 
     if [ -n "${ACE_COMMIT:-}" ] && [ "$ACE_COMMIT" != "HEAD" ]; then
         local sha tmp
@@ -238,7 +246,7 @@ ensure_web_image() {
         tmp="$(_extract_commit_tree "$sha")" || return 1
         local rc=0
         ACE_COMMIT="$sha" _ensure_podman_image \
-            "$tag" "$tmp" "$tmp/container/aceman-web/Containerfile.web" "web" \
+            "$tag" "$tmp" "$tmp/web/container/Containerfile.web" "web" \
             || rc=$?
         rm -rf "$tmp"
         return "$rc"

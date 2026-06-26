@@ -92,6 +92,15 @@ test('loadLastPlay — non-object payload → null', () => {
   assert.equal(loadLastPlay(ls), null);
 });
 
+test('loadLastPlay — valid cid but non-string name/sub coerce to empty', () => {
+  // A partial / tampered payload (right cid, garbage labels) must not
+  // surface a number or object as the display name — exercise the
+  // `typeof parsed.name === "string" ? … : ""` arms.
+  const ls = fakeStorage({ [KEYS.LAST_PLAY]:
+    JSON.stringify({ cid: CID, name: 123, sub: { x: 1 } }) });
+  assert.deepEqual(loadLastPlay(ls), { cid: CID, name: '', sub: '' });
+});
+
 test('loadLastPlay — survives storage that throws', () => {
   const ls = { getItem: () => { throw new Error('boom'); },
                setItem: () => {}, removeItem: () => {} };

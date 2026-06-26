@@ -96,6 +96,26 @@ test('non-2xx with empty body → message uses statusText', async () => {
   assert.equal(err.message, 'ERR');
 });
 
+test('uses the global fetch when no fetchImpl is passed', async () => {
+  // Production calls createApi() with no argument and relies on
+  // globalThis.fetch — exercise that `typeof fetch !== "undefined" ? fetch`
+  // arm with a stub so we don't hit the network.
+  const saved = globalThis.fetch;
+  const calls = [];
+  try {
+    globalThis.fetch = async (path, opts) => {
+      calls.push({ path, opts });
+      return fakeRes({ status: 200, body: '{"ok":true}' });
+    };
+    const api = createApi();
+    const data = await api('/api/ping');
+    assert.deepEqual(data, { ok: true });
+    assert.equal(calls[0].path, '/api/ping');
+  } finally {
+    globalThis.fetch = saved;
+  }
+});
+
 test('createApi throws when no fetch is available', () => {
   // We have to NOT pass fetchImpl AND make sure globalThis.fetch is
   // unreachable. Saving / restoring is enough.

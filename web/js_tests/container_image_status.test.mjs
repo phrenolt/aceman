@@ -79,6 +79,15 @@ test('missing log_tail defaults to empty lines (no crash)', () => {
   assert.deepEqual(v.log.lines, []);
 });
 
+test('building with no log_tail still yields empty lines (no crash)', () => {
+  // Exercises the building-branch `s.log_tail || []` fallback arm —
+  // a build can report state before the first log line lands.
+  const v = describeContainerImageStatus({ state: 'building', installed: false });
+  assert.equal(v.status, 'building…');
+  assert.deepEqual(v.log.lines, []);
+  assert.equal(v.log.expanded, true);
+});
+
 test('UNAVAILABLE result is frozen — caller mutations cannot leak', () => {
   // The mapping reuses one static object for the unavailable case;
   // freezing it stops a caller from accidentally toggling

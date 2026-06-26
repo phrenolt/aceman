@@ -52,7 +52,7 @@ set -euo pipefail
 # engine joins the same bridge as the web container.
 _SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
 PROG="run-container.sh"
-. "$_SCRIPT_DIR/../lib.sh"
+. "$_SCRIPT_DIR/../../shared/container/lib.sh"
 ACE_NETWORK="${ACE_NETWORK:-aceman-net}"
 ensure_shared_network
 

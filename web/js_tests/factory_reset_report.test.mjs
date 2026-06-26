@@ -95,6 +95,18 @@ test('step with missing name renders a fallback label', () => {
   assert.match(out, /\(unnamed step\)/);
 });
 
+test('malformed kept entries are skipped, not crashed on', () => {
+  // Mirror the step-guard: a null/garbage kept entry must be dropped
+  // via formatKept's `!entry || typeof entry !== 'object'` guard, not
+  // throw while building the footer.
+  const out = formatResetReport({
+    steps: [{ name: 'wipe db', ok: true }],
+    kept: [null, 'nope', 7, { path: '/real', reason: 'kept it' }],
+  });
+  assert.match(out, /Kept:\n {2}\/real\n {4}kept it/);
+  assert.equal(out.includes('null'), false);
+});
+
 test('kept entry with missing fields renders placeholders gracefully', () => {
   const out = formatResetReport({
     steps: [], kept: [{}],

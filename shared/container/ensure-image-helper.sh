@@ -8,8 +8,8 @@
 # now up to date), non-zero on failure with a message on stderr.
 #
 # Usage:
-#   container/ensure-image-helper.sh engine
-#   container/ensure-image-helper.sh web
+#   shared/container/ensure-image-helper.sh engine
+#   shared/container/ensure-image-helper.sh web
 #
 # Honors ACE_COMMIT just like the wrappers — if the broker was
 # spawned in a session that pinned the build via `aceman_web
@@ -18,7 +18,8 @@
 
 set -e
 SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
-ACELIB_PROJECT_ROOT="${ACELIB_PROJECT_ROOT:-$(cd "$SCRIPT_DIR/.." && pwd)}"
+# This helper lives at shared/container/, so the project root is two up.
+ACELIB_PROJECT_ROOT="${ACELIB_PROJECT_ROOT:-$(cd "$SCRIPT_DIR/../.." && pwd)}"
 PROG="${PROG:-aceman-broker}"
 . "$SCRIPT_DIR/lib.sh"
 

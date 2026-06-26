@@ -48,3 +48,30 @@ test('pickFavouriteName — fabricates ace <cid8> when both labels missing', () 
   const r = { cid: 'abcdef0123456789cafe' };
   assert.equal(pickFavouriteName(r, []), 'ace abcdef01');
 });
+
+test('uniqueFavouriteName — tolerates a missing takenNames list', () => {
+  // Exercises the `new Set(takenNames || [])` fallback arm — callers
+  // may omit the list entirely.
+  assert.equal(uniqueFavouriteName('Solo'), 'Solo');
+});
+
+test('pickFavouriteName — no labels and no cid → bare "ace"', () => {
+  // Exercises the `(r.cid || '')` empty arm: with nothing to name from,
+  // the helper still yields a non-null trimmed fallback.
+  assert.equal(pickFavouriteName({}, []), 'ace');
+});
+
+test('uniqueFavouriteName — Date.now() fallback when (2)…(998) all taken', () => {
+  // The numbered-suffix loop runs i=2..998. Exhaust every one of those
+  // plus the base, and the helper must fall through to the timestamped
+  // last-resort name rather than loop forever or return a collision.
+  const base = 'Sport';
+  const taken = [base];
+  for (let i = 2; i < 999; i++) taken.push(`${base} (${i})`);
+  const name = uniqueFavouriteName(base, taken);
+  assert.match(name, /^Sport \(\d+\)$/);
+  assert.ok(!taken.includes(name), 'fallback name must not collide');
+  // The fallback uses Date.now() (13-digit epoch ms), never a 2..998 index.
+  const n = Number(name.match(/\((\d+)\)$/)[1]);
+  assert.ok(n > 998, `expected a timestamp, got ${n}`);
+});

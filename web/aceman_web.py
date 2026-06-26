@@ -35,6 +35,7 @@ except OSError:
 
 import argparse
 import errno
+import hashlib
 import http.server
 import json
 import os
@@ -218,54 +219,146 @@ def _top_level_names(src: str) -> "list[str]":
 
 
 def _bundle_js() -> str:
+    # The browser gets ONE classic-script IIFE: every module's source is
+    # concatenated, import/export keywords stripped, names resolved as
+    # siblings in a single scope. ESM only exists for the Node test runner.
+    #
+    # Order matters because of that flattening:
+    #   1. js/lib/**     — the pure, tested primitives (createApi, parseId, …)
+    #   2. js/shared/**  — technical substrate + generic UI (dom, api,
+    #                      dropdown, notice); depends on lib.
+    #   3. js/domains/** — business slices (gpu, image, desktop, …); depend
+    #                      on lib + shared, are depended on by app.js.
+    #   4. js/app.js     — the DOM-wiring entry + init IIFE; goes last.
+    # rglob (not glob) so grouped subdirectories under each dir are picked
+    # up (lib/playback/, domains/gpu/, …).
     lib_dir = _HERE / "js" / "lib"
-    # rglob (not glob) so the bundler picks up the grouped
-    # subdirectories under lib/ — playback/, favourites/, engine/,
-    # cards/. Top-level lib/*.js still resolve naturally.
-    lib_files = sorted(lib_dir.rglob("*.js")) if lib_dir.exists() else []
-    parts = []
+    shared_dir = _HERE / "js" / "shared"
+    domains_dir = _HERE / "js" / "domains"
+    parts: "list[str]" = []
     seen: "dict[str, str]" = {}  # name → first file that declared it
-    for p in lib_files:
-        rel = p.relative_to(lib_dir)
-        src = p.read_text(encoding="utf-8")
+
+    def _add(src: str, label: str) -> None:
         # Fail loudly on a duplicate top-level identifier before the
-        # bundle ever reaches the browser — otherwise the operator
-        # sees an opaque "Identifier 'X' has already been declared"
-        # in the devtools console and has to bisect.
+        # bundle ever reaches the browser — otherwise the operator sees an
+        # opaque "Identifier 'X' has already been declared" in the devtools
+        # console and has to bisect. Everything is one scope now, so a name
+        # collision between ANY two bundled files is fatal.
         for name in _top_level_names(src):
             prev = seen.get(name)
             if prev is not None:
                 raise RuntimeError(
                     f"bundler: duplicate top-level identifier {name!r} "
-                    f"declared in both {prev} and {rel} — rename one or "
+                    f"declared in both {prev} and {label} — rename one or "
                     f"move the constant inside the function."
                 )
-            seen[name] = str(rel)
-        # Show the relative path in the section header so a stack
-        # trace pointing at "lib/playback/playback_target.js" lines
-        # up with what the developer sees in their editor.
-        parts.append(f"// ---- {rel} ----")
+            seen[name] = label
+        # The relative path in the section header lets a browser stack
+        # trace line up with what the developer sees in their editor.
+        parts.append(f"// ---- {label} ----")
         parts.append(_strip_module_syntax(src))
-    parts.append("// ---- app.js ----")
-    parts.append(_strip_module_syntax(
-        (_HERE / "js" / "app.js").read_text(encoding="utf-8")))
+
+    for base, prefix in ((lib_dir, "lib"), (shared_dir, "shared"), (domains_dir, "domains")):
+        for p in (sorted(base.rglob("*.js")) if base.exists() else []):
+            _add(p.read_text(encoding="utf-8"), f"{prefix}/{p.relative_to(base)}")
+    _add((_HERE / "js" / "app.js").read_text(encoding="utf-8"), "app.js")
     # Wrap the whole thing in an IIFE so module-scope variables don't
     # leak into window. Mirrors what ESM gives the test runner.
     return "(() => {\n" + "\n".join(parts) + "\n})();"
+
+
+def _git_commit() -> str:
+    # Native-mode fallback: read the working-tree commit straight from git.
+    # Container mode has no .git, so the wrapper passes ACEMAN_COMMIT instead
+    # (see _build_stamp). Best-effort — any failure yields "".
+    try:
+        out = subprocess.run(
+            ["git", "-C", str(_HERE.parent), "rev-parse", "--short", "HEAD"],
+            capture_output=True, text=True, timeout=2,
+        )
+        return out.stdout.strip() if out.returncode == 0 else ""
+    except Exception:
+        return ""
+
+
+def _git_dirty() -> bool:
+    try:
+        out = subprocess.run(
+            ["git", "-C", str(_HERE.parent), "status", "--porcelain"],
+            capture_output=True, text=True, timeout=2,
+        )
+        return out.returncode == 0 and bool(out.stdout.strip())
+    except Exception:
+        return False
+
+
+def _web_source_digest(seed: str) -> str:
+    # A fingerprint of EVERYTHING that shapes this web build: the served
+    # page (html/css/js, passed in as `seed`) AND the backend Python that
+    # runs the server (aceman_web.py + the aceman/ package). A change to
+    # either side moves the digest, so a smoke test can confirm it's the
+    # freshly-rebuilt version — frontend OR backend edits both show up.
+    #
+    # tests/ and __pycache__ are excluded (they don't affect runtime).
+    h = hashlib.sha256()
+    h.update(seed.encode("utf-8"))
+    for p in sorted(_HERE.rglob("*.py")):
+        parts = p.relative_to(_HERE).parts
+        if "__pycache__" in parts or parts[0] == "tests":
+            continue
+        h.update(str(p.relative_to(_HERE)).encode("utf-8"))
+        h.update(p.read_bytes())
+    return h.hexdigest()[:8]
+
+
+def _build_hash(page_source: str) -> str:
+    # A fingerprint of the EXACT sources this server was built from, so a
+    # smoke test can confirm it's the freshly-rebuilt version without
+    # inspecting podman labels. Covers the served page AND the web backend
+    # (see _web_source_digest). This is the RELIABLE signal — it's baked
+    # into the image at build time and is present in every mode.
+    #
+    # Kept SEPARATE from the commit on purpose: while the tree is dirty the
+    # image carries no aceman.commit label, and the broker can recreate a
+    # container without the commit env — so a commit can be absent even on
+    # a correct build. Folding them into one string made that look like a
+    # different build; two fields keep them honest.
+    return _web_source_digest(page_source)
+
+
+def _commit_label() -> str:
+    # The git commit (+ dirty flag) when known. Env wins (the wrapper sets
+    # ACEMAN_COMMIT for container mode, which has no .git); git is the
+    # native-mode fallback. May be "" — that's fine, the build hash stands
+    # on its own.
+    commit = os.environ.get("ACEMAN_COMMIT") or _git_commit()
+    dirty = os.environ.get("ACEMAN_DIRTY") == "1" or (
+        "ACEMAN_DIRTY" not in os.environ and _git_dirty())
+    if not commit:
+        return "dirty" if dirty else ""
+    return commit[:7] + ("-dirty" if dirty else "")
 
 
 def _load_index_template() -> str:
     html = (_HERE / "html" / "index.html").read_text(encoding="utf-8")
     css = (_HERE / "css" / "style.css").read_text(encoding="utf-8")
     js = _bundle_js()
+    # Hash is computed over the assembled sources (pre-injection) so it's
+    # deterministic and never includes itself.
+    build = _build_hash(html + css + js)
+    commit = _commit_label()
     out = (html
            .replace("/*__ACEMAN_CSS_HERE__*/", css)
-           .replace("//__ACEMAN_JS_HERE__", js))
+           .replace("//__ACEMAN_JS_HERE__", js)
+           .replace("__ACEMAN_BUILD__", build)
+           .replace("__ACEMAN_COMMIT__", commit))
     # Fail loudly if either marker survived — means the html drifted and
     # the page would render without its styles/script.
     for marker in ("/*__ACEMAN_CSS_HERE__*/", "//__ACEMAN_JS_HERE__"):
         if marker in out:
             raise RuntimeError(f"index template missing sentinel: {marker}")
+    print(f"aceman-web: serving build {build}"
+          + (f" commit {commit}" if commit else ""), file=sys.stderr)
     return out
 
 

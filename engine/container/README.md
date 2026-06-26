@@ -1,4 +1,4 @@
-# Engine image (`container/engine/`)
+# Engine image (`engine/container/`)
 
 The Ace Stream engine, inside a locked-down rootless Podman container.
 Everything for this image lives here: the `Containerfile`, the `dist/`
@@ -16,7 +16,7 @@ version may change over time), e.g.:
 
 ```
 acestream_3.2.11_ubuntu_22.04_x86_64_py3.10.tar.gz
-  → save as container/engine/dist/engine.tar.gz
+  → save as engine/container/dist/engine.tar.gz
 ```
 
 There is no upstream signature, so record your own SHA-256 and keep it.
@@ -29,22 +29,22 @@ compare yours against it to confirm you grabbed the same build.
 > cache images for you, labelled `aceman.commit=<sha>`.
 
 ```bash
-mkdir -p container/engine/dist
-mv engine.tar.gz container/engine/dist/
-sha256sum container/engine/dist/engine.tar.gz | tee container/engine/dist/engine.tar.gz.sha256
+mkdir -p engine/container/dist
+mv engine.tar.gz engine/container/dist/
+sha256sum engine/container/dist/engine.tar.gz | tee engine/container/dist/engine.tar.gz.sha256
 podman build -t localhost/acestream:vetted \
-    -f container/engine/Containerfile container/engine
+    -f engine/container/Containerfile engine/container
 ```
 
-Build context is `container/engine/` itself, so `COPY dist/engine.tar.gz`
+Build context is `engine/container/` itself, so `COPY dist/engine.tar.gz`
 resolves locally. `.containerignore` (at the project root) keeps the
 context small and the layer cache stable. The aceman-web image has the
-same shape under `container/aceman-web/`.
+same shape under `web/container/`.
 
 ## Run
 
 ```bash
-./container/engine/run-container.sh
+./engine/container/run-container.sh
 ```
 
 Foreground; Ctrl-C stops it.
@@ -80,7 +80,7 @@ facilities, so the default keeps you on the compliant side. If you'd
 rather block them, opt in explicitly:
 
 ```bash
-ACE_BLOCK_TELEMETRY=1 ./container/engine/run-container.sh
+ACE_BLOCK_TELEMETRY=1 ./engine/container/run-container.sh
 ```
 
 (or export it before launching `aceman` / `aceman_web`). This null-routes

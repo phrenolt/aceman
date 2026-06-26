@@ -72,6 +72,13 @@ test('parseTarget — missing source segment tolerated', () => {
                    { kind: 'external', name: 'mpv', source: '' });
 });
 
+test('parseTarget — empty name segment tolerated', () => {
+  // `external||system` has an empty middle segment — the `name || ''`
+  // arm must yield '' rather than undefined.
+  assert.deepEqual(parseTarget('external||system'),
+                   { kind: 'external', name: '', source: 'system' });
+});
+
 test('isExternal / isBrowser / isBareBrowser predicates', () => {
   assert.equal(isExternal('external|vlc|system'), true);
   assert.equal(isExternal('browser|firefox|'), false);

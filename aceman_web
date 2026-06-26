@@ -386,7 +386,7 @@ unset _arg _take_commit
 # read $ACELIB_PROJECT_ROOT and $PROG for context.
 PROG="aceman_web"
 ACELIB_PROJECT_ROOT="$SCRIPT_DIR"
-. "$SCRIPT_DIR/container/lib.sh"
+. "$SCRIPT_DIR/shared/container/lib.sh"
 
 # First-run image bootstrap. ensure_engine_image is always run (the
 # engine container is what the user ultimately watches streams with,
@@ -729,7 +729,7 @@ if [ "$WEB_USE_CONTAINER" = 1 ]; then
     # launcher reads ACE_WEB_HOST / ACE_WEB_PORT from the environment
     # for the `-p` publish, and forwards the rest of argv to python
     # inside the container.
-    exec -a aceman_web "$SCRIPT_DIR/container/aceman-web/run-web-container.sh" \
+    exec -a aceman_web "$SCRIPT_DIR/web/container/run-web-container.sh" \
         "${_web_argv[@]}"
 fi
 

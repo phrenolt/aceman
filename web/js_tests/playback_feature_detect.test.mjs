@@ -32,6 +32,22 @@ test('null / undefined globalObj → false (no crash)', () => {
   assert.equal(inBrowserPlaybackSupported(undefined), false);
 });
 
+test('falls back to the global window when no arg is passed', () => {
+  // Exercises the `typeof window !== "undefined" ? window` arm: in the
+  // real page inBrowserPlaybackSupported() is called with no argument
+  // and must read the global window.
+  const had = Object.prototype.hasOwnProperty.call(globalThis, 'window');
+  const saved = globalThis.window;
+  try {
+    globalThis.window = { mpegts: { isSupported: () => true } };
+    assert.equal(inBrowserPlaybackSupported(), true);
+    globalThis.window = { mpegts: {} };
+    assert.equal(inBrowserPlaybackSupported(), false);
+  } finally {
+    if (had) globalThis.window = saved; else delete globalThis.window;
+  }
+});
+
 test('isSupported throwing is treated as unsupported', () => {
   // Some private-browsing modes block MSE in a way that surfaces
   // as a throw from mpegts.isSupported(). We want a clean false —

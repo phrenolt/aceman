@@ -76,6 +76,17 @@ test('cancel() after fire is harmless', () => {
   assert.doesNotThrow(() => f.cancel());
 });
 
+test('falls back to the real global timers when no deps are passed', async () => {
+  // Exercises the `typeof setTimeout !== "undefined" ? setTimeout` arm:
+  // production calls debounce() with no deps and relies on the globals.
+  let calls = 0;
+  const f = debounce(() => { calls++; }, 5);
+  f(); f();                         // collapse to one trailing fire
+  await new Promise(r => setTimeout(r, 30));
+  assert.equal(calls, 1, 'real timers drive a single trailing call');
+  assert.doesNotThrow(() => f.cancel());  // clearTimeout global, token null
+});
+
 test('factory throws when no timers are available', () => {
   const saved = { setTimeout: globalThis.setTimeout,
                   clearTimeout: globalThis.clearTimeout };

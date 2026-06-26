@@ -106,3 +106,19 @@ test('createBrowserFavouritesStore — no storage backend throws', () => {
   assert.throws(() => createBrowserFavouritesStore(null),
                 /no storage backend/);
 });
+
+test('falls back to the global localStorage when none is passed', () => {
+  // Production calls createBrowserFavouritesStore() with no argument and
+  // relies on the global localStorage — exercise that fallback arm with
+  // a stand-in so the test stays hermetic.
+  const had = Object.prototype.hasOwnProperty.call(globalThis, 'localStorage');
+  const saved = globalThis.localStorage;
+  try {
+    globalThis.localStorage = fakeStorage();
+    const f = createBrowserFavouritesStore();
+    f.add('solo', 'a'.repeat(40));
+    assert.deepEqual(f.list().map(x => x.name), ['solo']);
+  } finally {
+    if (had) globalThis.localStorage = saved; else delete globalThis.localStorage;
+  }
+});

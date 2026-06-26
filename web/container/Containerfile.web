@@ -1,6 +1,6 @@
 # Aceman web frontend — rootless podman container.
 #
-# Sibling to container/engine/Containerfile (which sandboxes the untrusted
+# Sibling to engine/container/Containerfile (which sandboxes the untrusted
 # acestream engine). This image is for OUR code: the Python web
 # frontend that the user actually browses. Reason to containerize it
 # even though it's our own code:
@@ -47,6 +47,18 @@ COPY web /app/web
 
 # Per project convention: stdlib-only Python. No requirements.txt /
 # pip install step.
+
+# Build identity, baked at build time so the in-page `dbg` overlay can
+# report which commit this image was built from — independent of how the
+# container is later launched (wrapper `podman run` OR a broker recreate
+# that replays config, which a runtime -e would NOT survive). Supplied by
+# lib.sh's _ensure_podman_image. Placed AFTER the heavy apt/COPY layers so
+# a commit change only rebuilds this cheap trailing layer. Empty / 0
+# outside a git checkout.
+ARG ACEMAN_COMMIT=
+ARG ACEMAN_DIRTY=0
+ENV ACEMAN_COMMIT=${ACEMAN_COMMIT} \
+    ACEMAN_DIRTY=${ACEMAN_DIRTY}
 
 # Default port — overridable from the launcher's --port flag.
 EXPOSE 8770

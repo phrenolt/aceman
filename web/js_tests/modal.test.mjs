@@ -94,6 +94,27 @@ test('setup may return nothing — close still works', async () => {
   assert.equal(await p, 42);
 });
 
+test('falls back to the global document as event target', async () => {
+  // The real page calls runModal without an explicit eventTarget and
+  // relies on the global `document` — exercise the
+  // `typeof document !== "undefined" ? document` arm with a stand-in.
+  const overlay = fakeOverlay();
+  const docLike = fakeTarget();
+  const had = Object.prototype.hasOwnProperty.call(globalThis, 'document');
+  const saved = globalThis.document;
+  try {
+    globalThis.document = docLike;
+    let done;
+    const p = runModal({ overlay }, d => { done = d; });
+    assert.equal(docLike.listenerCount('keydown'), 1, 'wired to global document');
+    docLike.dispatch('keydown', { key: 'Escape' });
+    assert.equal(await p, null);
+    assert.equal(docLike.listenerCount('keydown'), 0, 'unwired on close');
+  } finally {
+    if (had) globalThis.document = saved; else delete globalThis.document;
+  }
+});
+
 test('missing overlay throws synchronously', () => {
   assert.throws(() => runModal({ overlay: null }, () => {}),
                 /overlay element is required/);

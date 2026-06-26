@@ -36,14 +36,14 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
-# This script lives under container/aceman-web/, so the project root
+# This script lives under web/container/, so the project root
 # is two levels up.
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 # Shared helpers (sourced for ensure_shared_network; same file backs
 # the engine launcher so both containers stay on the same network).
 PROG="run-web-container.sh"
-. "$SCRIPT_DIR/../lib.sh"
+. "$SCRIPT_DIR/../../shared/container/lib.sh"
 ACE_NETWORK="${ACE_NETWORK:-aceman-net}"
 ensure_shared_network
 
@@ -60,7 +60,7 @@ command -v podman >/dev/null || { echo "podman not installed"; exit 1; }
 
 # Build only when the image doesn't already exist. Rebuild manually
 # with: podman build -t "$ACE_WEB_IMAGE" \
-#       -f container/aceman-web/Containerfile.web .
+#       -f web/container/Containerfile.web .
 if ! podman image exists "$ACE_WEB_IMAGE"; then
     echo "building $ACE_WEB_IMAGE ..."
     podman build -t "$ACE_WEB_IMAGE" \
