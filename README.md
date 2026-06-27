@@ -53,9 +53,9 @@ cd aceman
 
 `check_install_dependencies.sh` detects your package manager (apt,
 dnf/yum, pacman, zypper, apk, rpm-ostree), installs anything missing,
-and can finish by installing **mpv + VLC** as Flatpaks locked down to
-**no filesystem access** — they get only network + audio + video, all
-the external-player path needs.
+and can finish by installing **mpv + VLC** — your choice of **Flatpak**
+(locked down to **no filesystem access**: only network + audio + video,
+all the external-player path needs) or **native** distro packages.
 
 **One-time:** download the Ace Stream engine tarball (proprietary, not
 shipped here) from **https://docs.acestream.net/products/#linux** — the

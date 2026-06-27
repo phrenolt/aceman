@@ -160,15 +160,7 @@ lockdown_player() {
   flatpak override --user --nofilesystem=host:reset "$1"
 }
 
-offer_players() {
-  [ -t 0 ] || return 0   # never prompt non-interactively
-  section "Optional: external players (mpv + VLC)"
-  echo "Browser playback needs no player. Install mpv + VLC as Flatpaks for"
-  echo "the './aceman' external-player path? They'll be locked down to NO"
-  echo "filesystem access (network + audio + video only)."
-  printf 'Install locked-down mpv + VLC? [y/N] '; read -r ans
-  case "$ans" in y|Y|yes) ;; *) echo "skipped players."; return 0 ;; esac
-
+install_players_flatpak() {
   if ! command -v flatpak >/dev/null 2>&1; then
     [ "$PM" = unknown ] && { err "flatpak missing and no known package manager."; return 1; }
     pm_install flatpak
@@ -184,6 +176,34 @@ offer_players() {
   done
   echo
   echo "Verify any time with:  flatpak info --show-permissions io.mpv.Mpv"
+}
+
+install_players_native() {
+  [ "$PM" = unknown ] && { err "no known package manager — install vlc + mpv manually."; return 1; }
+  section "Installing native vlc + mpv"
+  if pm_install vlc mpv; then
+    ok "native vlc + mpv installed (standard system permissions, full disk access)"
+  else
+    warn "native install failed — VLC on Fedora/openSUSE needs RPM Fusion /"
+    warn "Packman repos, and rpm-ostree needs those layered first. The Flatpak"
+    warn "option avoids all that (re-run and pick 1)."
+  fi
+}
+
+offer_players() {
+  [ -t 0 ] || return 0   # never prompt non-interactively
+  section "Optional: external players (mpv + VLC)"
+  echo "Browser playback needs no player. For the './aceman' external-player"
+  echo "path you can install mpv + VLC. Choose how:"
+  echo "  1) Flatpak  — locked to NO filesystem access (recommended)"
+  echo "  2) Native   — your distro's vlc + mpv packages (normal permissions)"
+  echo "  3) None     — skip"
+  printf 'Select [1/2/3] (default 1): '; read -r choice
+  case "${choice:-1}" in
+    1) install_players_flatpak ;;
+    2) install_players_native ;;
+    *) echo "skipped players." ;;
+  esac
 }
 
 offer_players
