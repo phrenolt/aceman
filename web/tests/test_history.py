@@ -54,8 +54,9 @@ class HistoryStoreTests(unittest.TestCase):
 
     def test_list_ordered_most_recent_first(self):
         # Insert with explicit timestamps to avoid same-second collision.
+        import contextlib
         import sqlite3
-        with sqlite3.connect(self.store.db_path) as c:
+        with contextlib.closing(sqlite3.connect(self.store.db_path)) as c, c:
             c.execute("INSERT INTO watch_history(cid,name,played_at) VALUES (?,?,?)",
                       (CID_A, "A", "2024-01-01 10:00:00"))
             c.execute("INSERT INTO watch_history(cid,name,played_at) VALUES (?,?,?)",

@@ -14,6 +14,7 @@ import-cost-free.
 
 from __future__ import annotations
 
+import contextlib
 import pathlib
 import sqlite3
 import threading
@@ -61,10 +62,20 @@ class FavStore:
             c.execute(
                 "CREATE INDEX IF NOT EXISTS favorites_cid_idx ON favorites(cid)")
 
-    def _conn(self) -> "sqlite3.Connection":
+    @contextlib.contextmanager
+    def _conn(self):
         # Re-open per call so the store works correctly across handler
         # threads (sqlite3.Connection isn't safe for cross-thread use).
-        return sqlite3.connect(self.db_path, timeout=5)
+        # `with c:` runs the transaction (commit/rollback); the finally
+        # CLOSES the connection — `with sqlite3.connect(...)` alone leaks
+        # it (it only ends the transaction), which surfaces as a
+        # ResourceWarning: unclosed database.
+        c = sqlite3.connect(self.db_path, timeout=5)
+        try:
+            with c:
+                yield c
+        finally:
+            c.close()
 
     def list(self) -> "list[dict]":
         with self._lock, self._conn() as c:

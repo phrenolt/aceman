@@ -9,6 +9,7 @@ grows unboundedly.
 
 from __future__ import annotations
 
+import contextlib
 import pathlib
 import sqlite3
 import threading
@@ -32,8 +33,18 @@ class HistoryStore:
                 ")"
             )
 
-    def _conn(self) -> sqlite3.Connection:
-        return sqlite3.connect(self.db_path, timeout=5)
+    @contextlib.contextmanager
+    def _conn(self):
+        # `with c:` runs the transaction (commit/rollback); the finally
+        # CLOSES the connection — `with sqlite3.connect(...)` alone leaks
+        # it (it only ends the transaction), surfacing as a
+        # ResourceWarning: unclosed database.
+        c = sqlite3.connect(self.db_path, timeout=5)
+        try:
+            with c:
+                yield c
+        finally:
+            c.close()
 
     def record(self, cid: str, name: str) -> None:
         if not name or not HEX40.match(cid):

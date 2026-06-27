@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from . import _setup  # noqa: F401
 
+import contextlib
 import pathlib
 import sqlite3
 import tempfile
@@ -177,7 +178,7 @@ class FavStoreLifecycleTests(unittest.TestCase):
         # a wrong-length cid past the constraint. This protects against
         # a future code path that bypasses .add() (e.g. a migration
         # script).
-        with sqlite3.connect(self.path) as c:
+        with contextlib.closing(sqlite3.connect(self.path)) as c, c:
             with self.assertRaises(sqlite3.IntegrityError):
                 c.execute(
                     "INSERT INTO favorites(name, cid) VALUES (?, ?)",
