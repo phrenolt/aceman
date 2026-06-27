@@ -4,7 +4,7 @@
 # The engine runs in a rootless podman container (default name: `ace`).
 # `podman logs -f` works with --rm containers too, so this stays useful
 # whether the engine was started via `aceman engine start`, via the
-# broker, or via `container/engine/run-container.sh` directly.
+# broker, or via `engine/container/run-container.sh` directly.
 
 set -e
 NAME="${ACE_NAME:-ace}"

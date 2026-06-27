@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Aceman</title>
+<link rel="icon" type="image/x-icon" href="/static/favicon.ico">
+<style>
+/*__ACEMAN_CSS_HERE__*/
+</style>
+</head>
+<body>
+
+<!--@include shared/busy_modal.html-->
+
+<!--@include domains/factory-reset/reset_modal.html-->
+
+<!--@include shared/confirm_modal.html-->
+
+<!--@include domains/lifecycle/restart_modal.html-->
+
+<!--@include domains/desktop/install_modal.html-->
+
+<!--@include domains/favourites/favname_modal.html-->
+
+<!--@include domains/wordmark/header.html-->
+
+<!--@include shared/notice_host.html-->
+
+<div class="main">
+  <!-- Source order matches narrow-screen display order:
+       Watch → Favourites → Player+Engine → Setup. The wide-screen
+       layout uses grid-template-areas in style.css to lift
+       Favourites out as a sticky left column while keeping the same
+       row order on the right side. -->
+
+<!--@include domains/playback/play_card.html-->
+
+<!--@include domains/favourites/favs_card.html-->
+
+  <div class="top-row" id="top-row">
+<!--@include domains/playback/player_card.html-->
+
+<!--@include domains/playback/engine_card.html-->
+  </div>
+
+  <div class="card has-card-label" id="setup-card">
+    <span class="card-label">Setup &amp; tools</span>
+
+      <div class="setup-grid">
+<!--@include domains/image/setup_row.html-->
+
+<!--@include domains/desktop/setup_row.html-->
+
+<!--@include domains/lifecycle/setup_row.html-->
+
+<!--@include domains/gpu/setup_row.html-->
+      </div>
+
+<!--@include domains/logs/setup_row.html-->
+
+<!--@include domains/factory-reset/danger_zone.html-->
+  </div>
+</div>
+
+<script src="/static/mpegts.min.js"></script>
+<script>
+//__ACEMAN_JS_HERE__
+</script>
+<!--@include domains/diagnostics/overlay.html-->
+</body>
+</html>

@@ -13,7 +13,7 @@ from . import _setup  # noqa: F401
 
 import unittest
 
-from aceman.desktop_helpers import _desktop_quote_arg
+from server.desktop_helpers import _desktop_quote_arg
 
 
 class DesktopQuoteArgTests(unittest.TestCase):

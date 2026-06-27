@@ -35,6 +35,7 @@ except OSError:
 
 import argparse
 import errno
+import hashlib
 import http.server
 import json
 import os
@@ -67,7 +68,7 @@ except ImportError:
 # main); the rest is imported. Keeps this file focused on routing
 # while the supporting classes get their own test surfaces.
 
-from aceman.constants import (
+from server.constants import (
     DEFAULT_ENGINE,
     DEFAULT_HOST,
     DEFAULT_PORT,
@@ -80,22 +81,22 @@ from aceman.constants import (
     MAX_BODY,
     MAX_ENGINE_BYTES,
 )
-from aceman.log_util import (
+from server.log_util import (
     _DISPLAY_DANGEROUS,
     _TERMINAL_DANGEROUS,
     _log,
     _sanitize_msg,
     _terminal_safe,
 )
-from aceman.heartbeat import HeartbeatTracker
-from aceman.engine_client import (
+from server.heartbeat import HeartbeatTracker
+from server.engine_client import (
     EngineError,
     _force_engine,
     _release_engine_session,
     engine_getstream,
     engine_probe,
 )
-from aceman.broker_client import (
+from server.broker_client import (
     BrokerClient,
     BrokerError,
     BrowsersBrokerClient,
@@ -106,15 +107,15 @@ from aceman.broker_client import (
     PlayersBrokerClient,
     WebBrokerClient,
 )
-from aceman.search import SearchError, _NoRedirectHandler, SearchProxy
-from aceman.config_store import Config
-from aceman.favourites import DuplicateCidError, FavStore
-from aceman.history import HistoryStore
-from aceman.desktop_helpers import _desktop_quote_arg
-from aceman.context import RouteContext
-from aceman.http_io import Request, Response
-from aceman.router import Router
-from aceman.routes import register_all as _register_routes
+from server.search import SearchError, _NoRedirectHandler, SearchProxy
+from server.config_store import Config
+from server.favourites import DuplicateCidError, FavStore
+from server.history import HistoryStore
+from server.desktop_helpers import _desktop_quote_arg
+from server.context import RouteContext
+from server.http_io import Request, Response
+from server.router import Router
+from server.routes import register_all as _register_routes
 
 
 # ---------- index template assembly ----------------------------------------
@@ -135,7 +136,7 @@ def _strip_module_syntax(src: str) -> str:
     can be concatenated into a single classic <script> block.
 
     The lib modules are written as proper ESM (so Node's test runner
-    can load them as-is under ``web/js_tests/``); the browser still
+    can load them as-is under ``web/ui/tests/``); the browser still
     receives one inlined IIFE bundle to keep the existing
     "single-template, single-request" page-load shape.
 
@@ -167,6 +168,18 @@ def _strip_module_syntax(src: str) -> str:
             if line.rstrip().endswith(";"):
                 _check_no_import_alias(s)
             else:
+                inside_import = True
+                import_buffer.append(s)
+            continue
+        # Aggregate / re-export lines (`export { x } from './y'`,
+        # `export * from './y'`) come from a domain's public index.js.
+        # The re-exported symbols are already declared by their source
+        # file, which is bundled into the same scope — so the re-export
+        # is pure noise in the bundle and would otherwise survive as an
+        # orphan `{ x } from '…'` (syntax error). Drop it, multi-line
+        # aware, exactly like an import.
+        if s.startswith("export {") or s.startswith("export *"):
+            if not line.rstrip().endswith(";"):
                 inside_import = True
                 import_buffer.append(s)
             continue
@@ -218,54 +231,194 @@ def _top_level_names(src: str) -> "list[str]":
 
 
 def _bundle_js() -> str:
-    lib_dir = _HERE / "js" / "lib"
-    # rglob (not glob) so the bundler picks up the grouped
-    # subdirectories under lib/ — playback/, favourites/, engine/,
-    # cards/. Top-level lib/*.js still resolve naturally.
-    lib_files = sorted(lib_dir.rglob("*.js")) if lib_dir.exists() else []
-    parts = []
+    # The browser gets ONE classic-script IIFE: every module's source is
+    # concatenated, import/export keywords stripped, names resolved as
+    # siblings in a single scope. ESM only exists for the Node test runner.
+    #
+    # Order matters because of that flattening:
+    #   1. ui/lib/**     — the pure, tested primitives (createApi, parseId, …)
+    #   2. ui/shared/**  — technical substrate + generic UI (dom, api,
+    #                      dropdown, notice); depends on lib.
+    #   3. ui/domains/** — business slices (gpu, image, desktop, …); depend
+    #                      on lib + shared, are depended on by main.js.
+    #   4. ui/main.js    — the bootstrap: wires the DOM + init IIFE; last.
+    # rglob (not glob) so grouped subdirectories under each dir are picked
+    # up (lib/playback/, domains/gpu/, …). Within the domains pass, files
+    # under a per-domain lib/ subdir sort FIRST (sort key 0) so a domain's
+    # business file can reference its own lib at top level — same "libs
+    # before consumers" guarantee the central lib_dir gives globally.
+    lib_dir = _HERE / "ui" / "lib"
+    shared_dir = _HERE / "ui" / "shared"
+    domains_dir = _HERE / "ui" / "domains"
+    parts: "list[str]" = []
     seen: "dict[str, str]" = {}  # name → first file that declared it
-    for p in lib_files:
-        rel = p.relative_to(lib_dir)
-        src = p.read_text(encoding="utf-8")
+
+    def _add(src: str, label: str) -> None:
         # Fail loudly on a duplicate top-level identifier before the
-        # bundle ever reaches the browser — otherwise the operator
-        # sees an opaque "Identifier 'X' has already been declared"
-        # in the devtools console and has to bisect.
+        # bundle ever reaches the browser — otherwise the operator sees an
+        # opaque "Identifier 'X' has already been declared" in the devtools
+        # console and has to bisect. Everything is one scope now, so a name
+        # collision between ANY two bundled files is fatal.
         for name in _top_level_names(src):
             prev = seen.get(name)
             if prev is not None:
                 raise RuntimeError(
                     f"bundler: duplicate top-level identifier {name!r} "
-                    f"declared in both {prev} and {rel} — rename one or "
+                    f"declared in both {prev} and {label} — rename one or "
                     f"move the constant inside the function."
                 )
-            seen[name] = str(rel)
-        # Show the relative path in the section header so a stack
-        # trace pointing at "lib/playback/playback_target.js" lines
-        # up with what the developer sees in their editor.
-        parts.append(f"// ---- {rel} ----")
+            seen[name] = label
+        # The relative path in the section header lets a browser stack
+        # trace line up with what the developer sees in their editor.
+        parts.append(f"// ---- {label} ----")
         parts.append(_strip_module_syntax(src))
-    parts.append("// ---- app.js ----")
-    parts.append(_strip_module_syntax(
-        (_HERE / "js" / "app.js").read_text(encoding="utf-8")))
+
+    def _domain_order(p):
+        rel = p.relative_to(domains_dir)
+        return (0 if "lib" in rel.parts else 1, str(rel))
+
+    for base, prefix in ((lib_dir, "lib"), (shared_dir, "shared"), (domains_dir, "domains")):
+        files = base.rglob("*.js") if base.exists() else []
+        # A domain's vendor/ holds third-party scripts (e.g. mpegts.min.js)
+        # that are NOT our ESM source — they're served as standalone
+        # <script>s. Keep them out of the concatenated module bundle.
+        files = [p for p in files if "vendor" not in p.relative_to(base).parts]
+        files = sorted(files, key=_domain_order) if base is domains_dir else sorted(files)
+        for p in files:
+            _add(p.read_text(encoding="utf-8"), f"{prefix}/{p.relative_to(base)}")
+    _add((_HERE / "ui" / "main.js").read_text(encoding="utf-8"), "main.js")
     # Wrap the whole thing in an IIFE so module-scope variables don't
     # leak into window. Mirrors what ESM gives the test runner.
     return "(() => {\n" + "\n".join(parts) + "\n})();"
 
 
+def _git_commit() -> str:
+    # Native-mode fallback: read the working-tree commit straight from git.
+    # Container mode has no .git, so the wrapper passes ACEMAN_COMMIT instead
+    # (see _build_stamp). Best-effort — any failure yields "".
+    try:
+        out = subprocess.run(
+            ["git", "-C", str(_HERE.parent), "rev-parse", "--short", "HEAD"],
+            capture_output=True, text=True, timeout=2,
+        )
+        return out.stdout.strip() if out.returncode == 0 else ""
+    except Exception:
+        return ""
+
+
+def _git_dirty() -> bool:
+    try:
+        out = subprocess.run(
+            ["git", "-C", str(_HERE.parent), "status", "--porcelain"],
+            capture_output=True, text=True, timeout=2,
+        )
+        return out.returncode == 0 and bool(out.stdout.strip())
+    except Exception:
+        return False
+
+
+def _web_source_digest(seed: str) -> str:
+    # A fingerprint of EVERYTHING that shapes this web build: the served
+    # page (html/css/js, passed in as `seed`) AND the backend Python that
+    # runs the server (aceman_web.py + the aceman/ package). A change to
+    # either side moves the digest, so a smoke test can confirm it's the
+    # freshly-rebuilt version — frontend OR backend edits both show up.
+    #
+    # tests/ and __pycache__ are excluded (they don't affect runtime).
+    h = hashlib.sha256()
+    h.update(seed.encode("utf-8"))
+    for p in sorted(_HERE.rglob("*.py")):
+        parts = p.relative_to(_HERE).parts
+        if "__pycache__" in parts or parts[0] == "tests":
+            continue
+        h.update(str(p.relative_to(_HERE)).encode("utf-8"))
+        h.update(p.read_bytes())
+    return h.hexdigest()[:8]
+
+
+def _build_hash(page_source: str) -> str:
+    # A fingerprint of the EXACT sources this server was built from, so a
+    # smoke test can confirm it's the freshly-rebuilt version without
+    # inspecting podman labels. Covers the served page AND the web backend
+    # (see _web_source_digest). This is the RELIABLE signal — it's baked
+    # into the image at build time and is present in every mode.
+    #
+    # Kept SEPARATE from the commit on purpose: while the tree is dirty the
+    # image carries no aceman.commit label, and the broker can recreate a
+    # container without the commit env — so a commit can be absent even on
+    # a correct build. Folding them into one string made that look like a
+    # different build; two fields keep them honest.
+    return _web_source_digest(page_source)
+
+
+def _commit_label() -> str:
+    # The git commit (+ dirty flag) when known. Env wins (the wrapper sets
+    # ACEMAN_COMMIT for container mode, which has no .git); git is the
+    # native-mode fallback. May be "" — that's fine, the build hash stands
+    # on its own.
+    commit = os.environ.get("ACEMAN_COMMIT") or _git_commit()
+    dirty = os.environ.get("ACEMAN_DIRTY") == "1" or (
+        "ACEMAN_DIRTY" not in os.environ and _git_dirty())
+    if not commit:
+        return "dirty" if dirty else ""
+    return commit[:7] + ("-dirty" if dirty else "")
+
+
+_INCLUDE_RE = re.compile(
+    r"^[ \t]*(?:<!--|/\*)@include[ \t]+(\S+?)[ \t]*(?:-->|\*/)[ \t]*\n",
+    re.MULTILINE,
+)
+
+
+def _expand_includes(text: str) -> str:
+    """Splice per-domain html/css partials into a shell template.
+
+    A line that is exactly ``<!--@include domains/x/y.html-->`` (html) or
+    ``/*@include domains/x/y.css*/`` (css) is replaced, in place, by the
+    referenced file's bytes (resolved under web/ui/). "In place" matters:
+    the partial lands exactly where its block used to live, so DOM order
+    and CSS cascade are preserved — the assembled output is byte-identical
+    to a single hand-written file. Markers may nest; we loop to a fixed
+    point. Each partial owns the styles/markup of one slice, colocated
+    with that slice's JS under web/ui/domains/<x>/ (or web/js/shared/).
+    """
+    base = _HERE / "ui"
+
+    def repl(m: "re.Match") -> str:
+        rel = m.group(1)
+        path = base / rel
+        if not path.is_file():
+            raise RuntimeError(f"@include: missing partial {rel!r} ({path})")
+        return path.read_text(encoding="utf-8")
+
+    for _ in range(10):  # fixed-point; depth is tiny in practice
+        new = _INCLUDE_RE.sub(repl, text)
+        if new == text:
+            return new
+        text = new
+    raise RuntimeError("@include: nesting too deep (cycle?)")
+
+
 def _load_index_template() -> str:
-    html = (_HERE / "html" / "index.html").read_text(encoding="utf-8")
-    css = (_HERE / "css" / "style.css").read_text(encoding="utf-8")
+    html = _expand_includes((_HERE / "ui" / "index.html").read_text(encoding="utf-8"))
+    css = _expand_includes((_HERE / "ui" / "style.css").read_text(encoding="utf-8"))
     js = _bundle_js()
+    # Hash is computed over the assembled sources (pre-injection) so it's
+    # deterministic and never includes itself.
+    build = _build_hash(html + css + js)
+    commit = _commit_label()
     out = (html
            .replace("/*__ACEMAN_CSS_HERE__*/", css)
-           .replace("//__ACEMAN_JS_HERE__", js))
+           .replace("//__ACEMAN_JS_HERE__", js)
+           .replace("__ACEMAN_BUILD__", build)
+           .replace("__ACEMAN_COMMIT__", commit))
     # Fail loudly if either marker survived — means the html drifted and
     # the page would render without its styles/script.
     for marker in ("/*__ACEMAN_CSS_HERE__*/", "//__ACEMAN_JS_HERE__"):
         if marker in out:
             raise RuntimeError(f"index template missing sentinel: {marker}")
+    print(f"aceman-web: serving build {build}"
+          + (f" commit {commit}" if commit else ""), file=sys.stderr)
     return out
 
 
@@ -477,9 +630,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
     # /etc/passwd — `name` is matched against keys only, never used to
     # build a filesystem path.
     _STATIC_FILES = {
-        "mpegts.min.js":                          ("application/javascript", "vendor/mpegts.min.js"),
-        "favicon.ico":                            ("image/x-icon",  "favicon.ico"),
-        "curiousconcept-patreon-button-dark.png": ("image/png",     "curiousconcept-patreon-button-dark.png"),
+        "mpegts.min.js":                          ("application/javascript", "ui/domains/playback/vendor/mpegts.min.js"),
+        "favicon.ico":                            ("image/x-icon",  "ui/assets/static/favicon.ico"),
+        "curiousconcept-patreon-button-dark.png": ("image/png",     "ui/assets/static/curiousconcept-patreon-button-dark.png"),
     }
 
     def _handle_static(self, name: str) -> None:

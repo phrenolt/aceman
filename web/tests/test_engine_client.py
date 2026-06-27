@@ -16,7 +16,7 @@ import unittest
 import unittest.mock as mock
 import urllib.error
 
-from aceman.engine_client import (
+from server.engine_client import (
     EngineError,
     _force_engine,
     _release_engine_session,
@@ -81,23 +81,23 @@ class EngineGetstreamRefusalsTests(unittest.TestCase):
             engine_getstream(ENGINE, "a" * 39)
 
     def test_refuses_non_dict_payload(self):
-        with mock.patch("aceman.engine_client.urllib.request.urlopen",
+        with mock.patch("server.engine_client.urllib.request.urlopen",
                         return_value=_fake_resp(b"[1, 2, 3]")):
             with self.assertRaises(EngineError) as ctx:
                 engine_getstream(ENGINE, GOOD_CID)
             self.assertIn("not a JSON object", str(ctx.exception))
 
     def test_refuses_non_json(self):
-        with mock.patch("aceman.engine_client.urllib.request.urlopen",
+        with mock.patch("server.engine_client.urllib.request.urlopen",
                         return_value=_fake_resp(b"<html>error</html>")):
             with self.assertRaises(EngineError) as ctx:
                 engine_getstream(ENGINE, GOOD_CID)
             self.assertIn("not JSON", str(ctx.exception))
 
     def test_refuses_oversize_response(self):
-        from aceman.constants import MAX_ENGINE_BYTES
+        from server.constants import MAX_ENGINE_BYTES
         big = b'{"x": "' + b"A" * (MAX_ENGINE_BYTES + 50) + b'"}'
-        with mock.patch("aceman.engine_client.urllib.request.urlopen",
+        with mock.patch("server.engine_client.urllib.request.urlopen",
                         return_value=_fake_resp(big)):
             with self.assertRaises(EngineError) as ctx:
                 engine_getstream(ENGINE, GOOD_CID)
@@ -111,7 +111,7 @@ class EngineGetstreamRefusalsTests(unittest.TestCase):
             "playback_url": "http://1.2.3.4/ace/r\rX",
             "command_url": "http://1.2.3.4/ace/cmd/X",
         }}).encode("utf-8")
-        with mock.patch("aceman.engine_client.urllib.request.urlopen",
+        with mock.patch("server.engine_client.urllib.request.urlopen",
                         return_value=_fake_resp(body)):
             with self.assertRaises(EngineError) as ctx:
                 engine_getstream(ENGINE, GOOD_CID)
@@ -120,14 +120,14 @@ class EngineGetstreamRefusalsTests(unittest.TestCase):
     def test_refuses_missing_playback_url(self):
         body = json.dumps({"response": {"command_url": "http://x/"}}
                           ).encode("utf-8")
-        with mock.patch("aceman.engine_client.urllib.request.urlopen",
+        with mock.patch("server.engine_client.urllib.request.urlopen",
                         return_value=_fake_resp(body)):
             with self.assertRaises(EngineError):
                 engine_getstream(ENGINE, GOOD_CID)
 
     def test_surfaces_engine_error_field(self):
         body = json.dumps({"error": "session in progress"}).encode("utf-8")
-        with mock.patch("aceman.engine_client.urllib.request.urlopen",
+        with mock.patch("server.engine_client.urllib.request.urlopen",
                         return_value=_fake_resp(body)):
             with self.assertRaises(EngineError) as ctx:
                 engine_getstream(ENGINE, GOOD_CID)
@@ -135,7 +135,7 @@ class EngineGetstreamRefusalsTests(unittest.TestCase):
 
     def test_strips_control_bytes_from_engine_error(self):
         body = json.dumps({"error": "boom\x1b[31m"}).encode("utf-8")
-        with mock.patch("aceman.engine_client.urllib.request.urlopen",
+        with mock.patch("server.engine_client.urllib.request.urlopen",
                         return_value=_fake_resp(body)):
             with self.assertRaises(EngineError) as ctx:
                 engine_getstream(ENGINE, GOOD_CID)
@@ -146,7 +146,7 @@ class EngineGetstreamRefusalsTests(unittest.TestCase):
             "playback_url": "http://evil.example:6878/ace/r/AAAA",
             "command_url": "http://evil.example:6878/ace/cmd/AAAA",
         }}).encode("utf-8")
-        with mock.patch("aceman.engine_client.urllib.request.urlopen",
+        with mock.patch("server.engine_client.urllib.request.urlopen",
                         return_value=_fake_resp(body)):
             pb, cmd = engine_getstream(ENGINE, GOOD_CID)
         self.assertTrue(pb.startswith(ENGINE + "/"))
@@ -161,19 +161,19 @@ class ReleaseEngineSessionTests(unittest.TestCase):
 
     def test_no_url_is_noop(self):
         # Should not raise, should not call urlopen.
-        with mock.patch("aceman.engine_client.urllib.request.urlopen") as u:
+        with mock.patch("server.engine_client.urllib.request.urlopen") as u:
             _release_engine_session(None)
             _release_engine_session("")
             self.assertFalse(u.called)
 
     def test_swallows_url_error(self):
-        with mock.patch("aceman.engine_client.urllib.request.urlopen",
+        with mock.patch("server.engine_client.urllib.request.urlopen",
                         side_effect=urllib.error.URLError("no route")):
             # Must not raise.
             _release_engine_session("http://x/cmd")
 
     def test_appends_method_stop_when_no_query(self):
-        with mock.patch("aceman.engine_client.urllib.request.urlopen") as u:
+        with mock.patch("server.engine_client.urllib.request.urlopen") as u:
             u.return_value.__enter__ = lambda self: u.return_value
             u.return_value.__exit__ = lambda *a: False
             u.return_value.read = lambda n: b""
@@ -181,7 +181,7 @@ class ReleaseEngineSessionTests(unittest.TestCase):
             self.assertIn("?method=stop", u.call_args[0][0])
 
     def test_appends_method_stop_with_existing_query(self):
-        with mock.patch("aceman.engine_client.urllib.request.urlopen") as u:
+        with mock.patch("server.engine_client.urllib.request.urlopen") as u:
             u.return_value.__enter__ = lambda self: u.return_value
             u.return_value.__exit__ = lambda *a: False
             u.return_value.read = lambda n: b""

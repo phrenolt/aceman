@@ -16,7 +16,7 @@ import unittest
 import unittest.mock as mock
 import urllib.error
 
-from aceman.search import SearchError, SearchProxy
+from server.search import SearchError, SearchProxy
 
 
 class _FakeResponse:

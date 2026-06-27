@@ -1,0 +1,55 @@
+  /* Favourites row layout */
+  .fav { display: flex; align-items: center; gap: .35rem;
+         padding: .35rem .25rem; border-radius: 3px;
+         border: 1px solid transparent;
+         box-shadow: 0 1px 0 #222;        /* row separator via shadow, frees border for glow */
+         transition: border-color .15s, box-shadow .15s, background .1s; }
+  .fav:hover { background: var(--hover); }
+  .fav:hover .fav-name,
+  .fav:hover .fav-last,
+  .fav:hover button.fav-menu-btn { color: #000; opacity: 1; font-weight: 600; }
+  .fav:last-child { box-shadow: none; }
+  /* Rows centred as a block; text left-aligns within each row. */
+  #fav-list { display: flex; flex-direction: column; align-items: center; }
+  .fav { width: min(100%, 28rem); }
+  /* Fav-list rows fill the #fav-inner constraint (40ch at 14px). */
+  #fav-list .fav { width: 100%; }
+  /* Single container governs all fav-card content width so ch is
+     always computed at the card's 14px font — not at .pager's .8rem. */
+  #fav-inner { max-width: 40ch; margin: 0 auto; }
+  #search-section { overflow: hidden; }
+  #search-results { display: flex; flex-direction: column; align-items: center; }
+  /* Section width is set by JS to match the play row exactly; rows must fill it fully. */
+  #search-results .fav { width: 100%; }
+  #history-section { overflow: hidden; }
+  #history-list { display: flex; flex-direction: column; align-items: center; }
+  #history-list .fav { width: 100%; }
+  /* Floating history dropdown — fixed so it clears card overflow. */
+  #history-dropdown {
+    position: fixed; z-index: 200;
+    background: #1a1a1a; border: 1px solid var(--hover); border-radius: 4px;
+    box-shadow: 0 6px 14px rgba(0,0,0,.45);
+    padding: .25rem 0; min-width: 22rem; max-width: 38rem;
+  }
+  .fav-name-wrap { flex: 1; min-width: 0; display: flex; align-items: baseline;
+                   gap: .5rem; cursor: pointer; }
+  .fav-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* ⋮ context menu */
+  .fav-menu-wrap { position: relative; flex-shrink: 0; }
+  button.fav-menu-btn { padding: .2rem 1rem; color: var(--mut); opacity: .65; line-height: 1; }
+  .fav:hover button.fav-menu-btn { opacity: 1; }
+  .fav-menu { position: absolute; right: 0; top: calc(100% + 2px); min-width: 8rem; z-index: 100; }
+  .fav-menu-sep { border-top: 1px solid #333; margin: .25rem 0; }
+  .fav-menu-delete { color: #c0392b; }
+  .fav-menu-delete.focused, .fav-menu-delete:hover { background: #c0392b !important; color: #fff; }
+  @keyframes fav-glow {
+    0%   { border-color: transparent; }
+    25%  { border-color: var(--hover); box-shadow: 0 0 6px rgba(181,146,56,.5); }
+    75%  { border-color: var(--hover); box-shadow: 0 0 6px rgba(181,146,56,.5); }
+    100% { border-color: transparent; box-shadow: none; }
+  }
+  .fav.fav-playing { animation: fav-glow 1.2s ease-in-out forwards; }
+  .fav-last { color: var(--mut); font-size: .72rem; white-space: nowrap; }
+  .fav-edit-input { flex: 1; padding: .2rem .4rem; font: inherit;
+                    background: #222; color: var(--fg);
+                    border: 1px solid var(--acc); border-radius: 3px; }
