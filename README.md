@@ -89,16 +89,6 @@ a player (the dependency script can install one).
 ./aceman engine status         # container + API + memory + cache
 ```
 
-Prefer system packages over Flatpak? Player install hints:
-
-| Distro            | Command                                                          |
-|-------------------|------------------------------------------------------------------|
-| Fedora / RHEL     | `sudo dnf install vlc mpv`                                        |
-| Fedora Silverblue | `rpm-ostree install vlc mpv` *or* `flatpak install org.videolan.VLC io.mpv.Mpv` |
-| Debian / Ubuntu   | `sudo apt install vlc mpv`                                        |
-| openSUSE          | `sudo zypper install vlc mpv`                                     |
-| Arch              | `sudo pacman -S vlc mpv`                                          |
-
 ### Windows (WSL2)
 
 Grab the repo ZIP —
