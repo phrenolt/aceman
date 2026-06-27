@@ -25,6 +25,35 @@ anything host-related directly.
   <a href="https://www.patreon.com/cw/curiousconcept"><img src="web/curiousconcept-patreon-button-dark.png" alt="Support on Patreon" width="240"></a>
 </p>
 
+## Screenshots
+
+<p align="center">
+  <img src="docs/screenshots/aceman-web.jpg" alt="aceman web UI playing a stream in the browser" width="820">
+</p>
+
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <img src="docs/screenshots/search-fav.png" alt="Built-in search and saved favourites"><br>
+      <sub><b>Search + favourites</b> — search streams, save channels to a local list.</sub>
+    </td>
+    <td width="50%" valign="top">
+      <img src="docs/screenshots/history.png" alt="Watch history, autocomplete, and setup tools"><br>
+      <sub><b>History + tools</b> — recent-channel autocomplete, engine/app launcher, lifecycle.</sub>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <img src="docs/screenshots/config.png" alt="GPU settings and live server, broker, and engine logs"><br>
+      <sub><b>Config + live logs</b> — GPU acceleration, and tailed server / broker / engine logs.</sub>
+    </td>
+    <td width="50%" valign="top">
+      <img src="docs/screenshots/buffer-config.png" alt="Player target and buffer settings"><br>
+      <sub><b>Player + buffer</b> — choose where playback opens and tune the buffer.</sub>
+    </td>
+  </tr>
+</table>
+
 ## Capabilities by OS
 
 | Capability                              | Linux | Windows (WSL2)            | macOS |
