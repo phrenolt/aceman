@@ -182,9 +182,10 @@ dependency tree. It's built on **vanilla technologies**: standard-library
 Python, plain shell, and dependency-free vanilla JavaScript, with the few
 unavoidable third-party pieces vendored, version-pinned, and hash-checked.
 
-**No binaries, no Docker images, no releases — what you see is what you
-get: inspect, build, run.** And **Podman, not Docker** — rootless and
-daemonless, so there's no privileged root daemon to trust or to attack.
+**No prebuilt binaries, no Docker images — releases are source-only:
+what you see is what you get: inspect, build, run.** And **Podman, not
+Docker** — rootless and daemonless, so there's no privileged root daemon
+to trust or to attack.
 
 It also wraps the Ace Stream engine **at arm's length**: the engine stays a
 separate, sandboxed, untrusted component behind a host-side allow-list — so
