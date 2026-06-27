@@ -142,7 +142,7 @@ zypper / apk / rpm-ostree.
 
 **Vendored in-tree (version-pinned + SHA-256 checked):**
 - **mpegts.js** (Apache-2.0) — browser playback. See
-  [`web/vendor/README.md`](web/vendor/README.md).
+  [`web/ui/domains/playback/vendor/README.md`](web/ui/domains/playback/vendor/README.md).
 
 **Optional:**
 - **VLC** or **mpv** — only for the external-player path. In-browser
@@ -209,8 +209,8 @@ aceman's own code is **MIT** — see [`LICENSE`](LICENSE). Exceptions:
 
 - **Ace Stream engine** — proprietary, not included; you download it
   yourself and it's governed by Ace Stream's own terms.
-- **`web/vendor/mpegts.min.js`** — bundled third-party library under
-  **Apache-2.0** (see its header and [`web/vendor/README.md`](web/vendor/README.md)).
+- **`web/ui/domains/playback/vendor/mpegts.min.js`** — bundled third-party library under
+  **Apache-2.0** (see its header and [`web/ui/domains/playback/vendor/README.md`](web/ui/domains/playback/vendor/README.md)).
 
 ## Disclaimer
 
