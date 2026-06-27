@@ -6,7 +6,7 @@ doesn't re-pull or re-create against the image tag, so any source
 change baked into a freshly-built image is invisible to the running
 container. ``pick_up_image_changes`` snapshots the
 ``aceman.commit`` label, invokes the shared
-``container/ensure-image-helper.sh`` to rebuild if the source moved,
+``shared/container/ensure-image-helper.sh`` to rebuild if the source moved,
 and reports whether the label actually changed. Callers that see a
 change recreate the container via :func:`recreate_container` (which
 replays the original ``CreateCommand`` after ``podman rm``);

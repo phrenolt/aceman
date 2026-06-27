@@ -1,0 +1,22 @@
+<div id="favname-modal" class="modal-backdrop" style="display:none" role="dialog" aria-modal="true">
+  <div class="modal-card">
+    <h3>Name this favourite</h3>
+    <p>Pick the label to save under.</p>
+    <label class="favname-opt" id="favname-english-opt" style="display:none">
+      <input type="radio" name="favname-choice" value="english">
+      <span><span class="favname-kind">English</span> <span id="favname-english-text"></span></span>
+    </label>
+    <label class="favname-opt" id="favname-original-opt" style="display:none">
+      <input type="radio" name="favname-choice" value="original">
+      <span><span class="favname-kind">Original</span> <span id="favname-original-text"></span></span>
+    </label>
+    <div class="favname-custom-row">
+      <span class="favname-kind">Custom</span>
+      <input id="favname-custom-input" type="text" maxlength="120" placeholder="Type a name…">
+    </div>
+    <div class="favname-actions">
+      <button id="favname-save" class="primary">Save</button>
+      <button id="favname-cancel">Cancel</button>
+    </div>
+  </div>
+</div>

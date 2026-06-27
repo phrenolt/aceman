@@ -1,0 +1,14 @@
+  /* Modal: favourite-name picker */
+  .favname-opt { display: flex; align-items: center; gap: .5rem;
+                 padding: .35rem .2rem; cursor: pointer; font-size: .9rem; }
+  .favname-opt input[type="radio"] { margin: 0; }
+  .favname-kind { color: var(--mut); font-size: .78rem;
+                  text-transform: uppercase; letter-spacing: .04em;
+                  margin-right: .25rem; }
+  .favname-custom-row { display: flex; align-items: center; gap: .5rem;
+                        padding: .35rem .2rem; margin-top: .15rem; }
+  #favname-custom-input { flex: 1; box-sizing: border-box;
+                          padding: .4rem .55rem; }
+  .favname-actions { display: flex; justify-content: flex-end; gap: .5rem;
+                     margin-top: 1rem; }
+  .favname-actions button { padding: .4rem .9rem; }

@@ -1,0 +1,20 @@
+  /* "Live" pip next to the PLAYBACK corner label when a stream is
+     actually live. Green dot + subtle pulse so the eye picks it up
+     without making the whole header shout. */
+  .live-dot {
+    color: #4caf50;
+    font-weight: 700;
+    font-size: .7rem;
+    margin-left: .35rem;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+  }
+  .live-dot::before {
+    content: "●";
+    margin-right: .2rem;
+    animation: live-pulse 1.4s ease-in-out infinite;
+  }
+  @keyframes live-pulse {
+    0%, 100% { opacity: 1; }
+    50%      { opacity: .35; }
+  }

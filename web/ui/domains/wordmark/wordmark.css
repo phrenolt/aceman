@@ -1,0 +1,19 @@
+  /* ACEMAN wordmark + optional glow. `.glow` class is toggled by the
+     little ✨ button next to it; preference persists in localStorage. */
+  .aceman {
+    font: 900 clamp(36px, 8.5vw, 64px)/1 "Helvetica Neue", Arial, sans-serif;
+    letter-spacing: .04em;
+    color: #39FF6A;
+    cursor: pointer;
+    user-select: none;
+  }
+  .aceman.glow {
+    animation: acemanGlow 4.5s ease-in-out infinite;
+  }
+  @keyframes acemanGlow {
+    0%, 100% { text-shadow: 0 0 5px rgba(57,255,106,.55),
+                            0 0 11px rgba(57,255,106,.33); }
+    50%      { text-shadow: 0 0 8px rgba(57,255,106,.85),
+                            0 0 18px rgba(57,255,106,.5),
+                            0 0 31px rgba(57,255,106,.28); }
+  }

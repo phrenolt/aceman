@@ -7,7 +7,7 @@ configured), and control bytes are scrubbed before anything is shown to
 the user. The container runs with `cap-drop=ALL`, `no-new-privileges`, a
 read-only rootfs, tmpfs scratch, memory + PID caps, and a
 **loopback-only** port binding (no inbound NAT punch-through). See
-[`container/engine/README.md`](../container/engine/README.md).
+[`engine/container/README.md`](../engine/container/README.md).
 
 `search-ace.stream` is treated identically: server-side proxy,
 HTTPS-only, allow-listed host, no off-domain redirects, JSON re-projected
