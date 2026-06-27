@@ -360,9 +360,44 @@ def _commit_label() -> str:
     return commit[:7] + ("-dirty" if dirty else "")
 
 
+_INCLUDE_RE = re.compile(
+    r"^[ \t]*(?:<!--|/\*)@include[ \t]+(\S+?)[ \t]*(?:-->|\*/)[ \t]*\n",
+    re.MULTILINE,
+)
+
+
+def _expand_includes(text: str) -> str:
+    """Splice per-domain html/css partials into a shell template.
+
+    A line that is exactly ``<!--@include domains/x/y.html-->`` (html) or
+    ``/*@include domains/x/y.css*/`` (css) is replaced, in place, by the
+    referenced file's bytes (resolved under web/js/). "In place" matters:
+    the partial lands exactly where its block used to live, so DOM order
+    and CSS cascade are preserved — the assembled output is byte-identical
+    to a single hand-written file. Markers may nest; we loop to a fixed
+    point. Each partial owns the styles/markup of one slice, colocated
+    with that slice's JS under web/js/domains/<x>/ (or web/js/shared/).
+    """
+    base = _HERE / "js"
+
+    def repl(m: "re.Match") -> str:
+        rel = m.group(1)
+        path = base / rel
+        if not path.is_file():
+            raise RuntimeError(f"@include: missing partial {rel!r} ({path})")
+        return path.read_text(encoding="utf-8")
+
+    for _ in range(10):  # fixed-point; depth is tiny in practice
+        new = _INCLUDE_RE.sub(repl, text)
+        if new == text:
+            return new
+        text = new
+    raise RuntimeError("@include: nesting too deep (cycle?)")
+
+
 def _load_index_template() -> str:
-    html = (_HERE / "html" / "index.html").read_text(encoding="utf-8")
-    css = (_HERE / "css" / "style.css").read_text(encoding="utf-8")
+    html = _expand_includes((_HERE / "html" / "index.html").read_text(encoding="utf-8"))
+    css = _expand_includes((_HERE / "css" / "style.css").read_text(encoding="utf-8"))
     js = _bundle_js()
     # Hash is computed over the assembled sources (pre-injection) so it's
     # deterministic and never includes itself.

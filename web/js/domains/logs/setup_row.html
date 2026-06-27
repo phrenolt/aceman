@@ -1,0 +1,23 @@
+      <div class="setup-row">
+        <div class="logs-tabs">
+          <button class="logs-tab" data-kind="web"
+                  title="The web server's log file: ~/.cache/aceman/web.log">
+            <strong>Server logs</strong>
+            <span class="status" data-role="logs-status"></span>
+            <span class="logs-toggle" data-role="logs-toggle" title="Pause auto-refresh">⏸</span>
+          </button>
+          <button class="logs-tab" data-kind="broker"
+                  title="The host broker's log file: ~/.cache/aceman/broker.log">
+            <strong>Broker logs</strong>
+            <span class="status" data-role="logs-status"></span>
+            <span class="logs-toggle" data-role="logs-toggle" title="Pause auto-refresh">⏸</span>
+          </button>
+          <button class="logs-tab" data-kind="engine"
+                  title="The engine container's live output (via 'podman logs ace') — not a file on disk">
+            <strong>Engine logs</strong>
+            <span class="status" data-role="logs-status"></span>
+            <span class="logs-toggle" data-role="logs-toggle" title="Pause auto-refresh">⏸</span>
+          </button>
+        </div>
+        <pre id="logs-viewer" style="display:none"></pre>
+      </div>

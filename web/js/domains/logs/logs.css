@@ -1,0 +1,58 @@
+  /* Logs as tabs: three buttons across the top, a single full-width
+     viewer below. Only one tab can be active at a time — clicking the
+     active tab closes the viewer; clicking a different tab switches
+     the stream without closing. */
+  .logs-tabs { display: grid; gap: .5rem; grid-template-columns: 1fr; }
+  @media (min-width: 720px) {
+    .logs-tabs { grid-template-columns: 1fr 1fr 1fr; }
+  }
+  .logs-tab {
+    text-align: left;
+    background: transparent;
+    border: 1px solid #2a2a2a;
+    border-radius: 4px;
+    padding: .45rem .65rem;
+    cursor: pointer;
+    color: inherit;
+    display: flex; justify-content: space-between; align-items: center; gap: .5rem;
+  }
+  .logs-tab:hover { border-color: var(--hover); }
+  .logs-tab.active { border-color: var(--hover); background: rgba(181, 146, 56, .1); }
+  /* Per-tab pause/play control. Hidden unless the tab is active.
+     Neutral monochrome so it doesn't compete with the tab title or the
+     mustard active state. */
+  .logs-toggle {
+    display: none;
+    font-size: .85rem;
+    height: 1.6rem; padding: 0 .35rem;
+    color: #ddd;
+    border: 1px solid #444; border-radius: 3px;
+    background: #1a1a1a;
+    align-items: center; justify-content: center;
+    line-height: 0;
+  }
+  .logs-tab.active .logs-toggle { display: inline-flex; }
+  .logs-toggle:hover { border-color: var(--hover); }
+  #logs-viewer {
+    background: #0a0a0a; color: #bbb;
+    border: 1px solid #222; padding: .6rem; margin: .5rem 0 0;
+    font: .72rem ui-monospace, monospace;
+    max-height: 24em; overflow: auto;
+    white-space: pre-wrap; word-break: break-all;
+  }
+  /* Sticky banner shown when the viewer is auto-paused by a click inside it. */
+  #logs-viewer.viewer-paused::before {
+    content: "⏸  Paused — click outside to resume";
+    display: block;
+    position: sticky;
+    top: 0;
+    background: rgba(50,40,8,.95);
+    color: var(--acc);
+    font: .72rem system-ui, sans-serif;
+    text-align: center;
+    padding: .2rem .4rem;
+    margin-bottom: .45rem;
+    border-radius: 3px;
+    border: 1px solid rgba(181,146,56,.3);
+    letter-spacing: .02em;
+  }

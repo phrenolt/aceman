@@ -1,0 +1,28 @@
+<div id="reset-modal" class="modal-backdrop" style="display:none" role="dialog" aria-modal="true">
+  <div class="modal-card">
+    <h3 style="color: var(--err)">Factory reset</h3>
+    <p><strong>Removes</strong>: the engine container and image, the app
+       launcher, the <code>acestream://</code> scheme handler (restored
+       to your previous handler if a backup exists, otherwise scrubbed),
+       your favourites database, the server-side config file, and the
+       host-side broker process.</p>
+    <p><strong>Kept</strong>: log files in
+       <code>~/.cache/aceman/</code> (useful for post-mortem; delete
+       manually if you want).</p>
+    <p>This cannot be undone.</p>
+    <p>Type <code>RESET</code> below to confirm:</p>
+    <div class="row">
+      <input type="text" id="reset-confirm-input" placeholder="RESET" autocomplete="off">
+    </div>
+    <div class="install-opt">
+      <button id="reset-go" class="danger" disabled>Wipe everything</button>
+    </div>
+    <div class="install-opt">
+      <button id="reset-cancel">Cancel</button>
+    </div>
+    <pre id="reset-report" style="display:none; max-height:220px; overflow:auto;
+         background:#0a0a0a; border:1px solid #222; border-radius:4px;
+         padding:.5rem .6rem; font-size:.72rem; font-family:ui-monospace,monospace;
+         white-space:pre-wrap;"></pre>
+  </div>
+</div>

@@ -1,0 +1,59 @@
+  /* Custom dropdown: full CSS control. We keep the underlying <select>
+     in the DOM (so existing JS that touches .value/.options keeps
+     working unchanged, and screen readers still see a proper select),
+     but visually hide it and overlay this widget driven by it. Avoids
+     the browser/OS-themed popup whose highlight colour is otherwise
+     unstylable. */
+  .aceman-select-wrap { position: relative; display: inline-block; }
+  .aceman-select-native {
+    /* Visually hidden but accessibility-visible. clip-path keeps it
+       out of layout without using display:none (which would remove it
+       from the tab order / a11y tree). */
+    position: absolute; width: 1px; height: 1px;
+    padding: 0; margin: -1px;
+    overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0;
+  }
+  .aceman-select-trigger {
+    appearance: none; font: inherit; cursor: pointer; text-align: left;
+    padding: .42rem 1.9rem .42rem .65rem;
+    background-color: #1a1a1a; color: var(--fg);
+    border: 1px solid #333; border-radius: 4px;
+    min-width: 9rem; max-width: 100%;
+    position: relative;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8' fill='none' stroke='%23aaa' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'><path d='M1.5 1.5 L6 6 L10.5 1.5'/></svg>");
+    background-repeat: no-repeat;
+    background-position: right .55rem center;
+    background-size: .65rem auto;
+  }
+  .aceman-select-trigger:hover:not(:disabled) { border-color: var(--hover); }
+  .aceman-select-trigger[aria-expanded="true"] {
+    outline: none;
+    border-color: var(--hover);
+    box-shadow: 0 0 0 2px rgba(181,146,56,.22);
+  }
+  .aceman-select-trigger:disabled { opacity: .55; cursor: not-allowed; }
+  .aceman-select-listbox {
+    position: absolute; top: calc(100% + 2px); left: 0; min-width: 100%;
+    z-index: 50;
+    background: #1a1a1a; border: 1px solid var(--hover); border-radius: 4px;
+    max-height: 18rem; overflow-y: auto;
+    padding: .25rem 0;
+    box-shadow: 0 6px 14px rgba(0,0,0,.45);
+  }
+  .aceman-select-listbox[hidden] { display: none; }
+  .aceman-select-option {
+    padding: .35rem .75rem; cursor: pointer; color: var(--fg);
+    white-space: nowrap;
+  }
+  .aceman-select-option:hover,
+  .aceman-select-option.focused { background: var(--hover); color: #000; }
+  .aceman-select-option[aria-selected="true"] {
+    background: rgba(181,146,56,.18);
+  }
+  .aceman-select-option[aria-selected="true"].focused { background: var(--hover); color: #000; }
+  .aceman-select-option[aria-disabled="true"] { opacity: .45; cursor: not-allowed; }
+  .aceman-select-group {
+    padding: .4rem .75rem .15rem;
+    font-size: .68rem; color: var(--mut);
+    text-transform: uppercase; letter-spacing: .05em; font-weight: 600;
+  }
