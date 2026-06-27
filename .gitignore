@@ -29,3 +29,6 @@ Thumbs.db
 # Local logs (the project writes these under ~/.cache/aceman by
 # default; this is just a safety net if a user runs from this dir).
 *.log
+
+# Full-resolution screenshot originals (optimized copies are committed)
+docs/screenshots/originals/
