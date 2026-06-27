@@ -1,0 +1,19 @@
+        <div class="setup-row">
+          <div class="setup-row-head" style="justify-content:center">
+            <span class="tip" data-tip="Controls the server components. Restart brings everything back up after a crash or settings change. Quit stops all containers and the broker — close the browser tab afterwards.">Lifecycle</span>
+          </div>
+          <div class="row" style="justify-content:center">
+            <button id="server-restart" title="Re-spawn the aceman web frontend and the host broker. The engine container is podman-restarted alongside. Any active player is closed first. The browser tab reloads itself when the new instance comes up.">Restart</button>
+            <button id="server-shutdown" title="Stop everything: close the active external player (if any), stop the engine container, terminate the host broker, and shut down the web frontend. The browser tab will display a 'stopped' notice — you can then close it.">Quit</button>
+          </div>
+          <div id="container-mem-row" style="display:none; justify-content:center; align-items:center; gap:1rem; font-size:.78rem; color:var(--mut); padding-top:.35rem; flex-wrap:wrap">
+            <span id="web-mem-cell" style="display:none">
+              <span class="tip">Web</span> <span id="web-mem-display"></span>
+              <span id="web-mem-hint" style="display:none"></span>
+            </span>
+            <span id="eng-mem-cell" style="display:none">
+              <span class="tip">Engine</span> <span id="eng-mem-display"></span>
+              <span id="eng-mem-hint" style="display:none"></span>
+            </span>
+          </div>
+        </div>

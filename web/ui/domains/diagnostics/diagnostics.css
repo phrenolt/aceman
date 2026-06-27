@@ -1,0 +1,11 @@
+  /* Debug overlay: type d-b-g outside any input to show viewport info. */
+  #dbg-overlay {
+    position: fixed; top: 1rem; right: 1rem;
+    background: rgba(10,10,10,.92); color: #eee;
+    border: 1px solid #555; border-radius: 6px;
+    padding: .55rem 1rem;
+    font: 600 1rem ui-monospace, monospace;
+    z-index: 9999; pointer-events: none;
+    opacity: 0; transition: opacity .15s;
+  }
+  #dbg-overlay.visible { opacity: 1; }

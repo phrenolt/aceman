@@ -9,9 +9,9 @@ import json
 import unittest
 import unittest.mock as mock
 
-from aceman.context import RouteContext
-from aceman.http_io import Request
-from aceman.routes import (
+from server.context import RouteContext
+from server.http_io import Request
+from server.routes import (
     browsers as browsers_routes,
     config_routes,
     players as players_routes,
@@ -51,7 +51,7 @@ class StorageModeTests(unittest.TestCase):
         self.assertEqual(body["favorites_path"], "/tmp/fav.db")
 
     def test_search_sources_present_when_enabled(self):
-        from aceman.search import SearchProxy
+        from server.search import SearchProxy
         ctx = RouteContext(engine="http://e", store=None,
                            search_proxy=mock.Mock(spec=SearchProxy))
         body = json.loads(
@@ -95,7 +95,7 @@ class PlayersRouteTests(unittest.TestCase):
         self.assertEqual(resp.status, 404)
 
     def test_broker_failure_degrades_to_empty_list(self):
-        from aceman.engine_client import EngineError
+        from server.engine_client import EngineError
         client = mock.Mock()
         client.list.side_effect = EngineError("no broker")
         ctx = RouteContext(players_client=client)
@@ -126,7 +126,7 @@ class BrowsersRouteTests(unittest.TestCase):
 class ConfigRouteTests(unittest.TestCase):
     def setUp(self):
         import pathlib, tempfile
-        from aceman.config_store import Config
+        from server.config_store import Config
         self._tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self._tmp.cleanup)
         self.config = Config(pathlib.Path(self._tmp.name) / "cfg.json")

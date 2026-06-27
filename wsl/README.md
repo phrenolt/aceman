@@ -47,18 +47,18 @@ proprietary). The web UI runs without it, but **playback needs it**.
 2. Rename it to `engine.tar.gz` and place it in the clone at:
 
    ```
-   ~/Projects/aceman/container/engine/dist/engine.tar.gz
+   ~/Projects/aceman/engine/container/dist/engine.tar.gz
    ```
 
    From Windows you can reach that folder in Explorer at:
 
    ```
-   \\wsl.localhost\Ubuntu\home\ace\Projects\aceman\container\engine\dist\
+   \\wsl.localhost\Ubuntu\home\ace\Projects\aceman\engine\container\dist\
    ```
 
    (paste it into the address bar; drop the file in, named `engine.tar.gz`).
 
-See [`../container/engine/README.md`](../container/engine/README.md) for
+See [`../engine/container/README.md`](../engine/container/README.md) for
 how to verify it against the `.sha256`.
 
 ## 3. Launch — `run.bat` (or the Desktop shortcut)
@@ -87,9 +87,12 @@ get_url_stream.bat YOUR_CONTENT_ID
 to your clipboard and, if it finds VLC or mpv, offers to open it. Otherwise
 paste the URL into your player via **Media → Open Network Stream**.
 
-How it works: in WSL, `aceman <id>` starts the engine if needed, returns
-the URL with the WSL guest IP as host, and leaves the session running so
-your Windows player can consume it. The engine times the session out on
+How it works: the script first runs `aceman engine start` in WSL (idempotent
+— it starts the engine container if it isn't already running, with the
+first-run image build visible), so this path works on its own and does **not**
+need the web UI to have been launched first. It then runs `aceman <id>`, which
+returns the URL with the WSL guest IP as host and leaves the session running
+so your Windows player can consume it. The engine times the session out on
 its own when the player goes away.
 
 **Bonus — GPU acceleration.** Because the player runs natively on Windows

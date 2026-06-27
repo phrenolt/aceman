@@ -16,8 +16,8 @@ import threading
 import unittest
 import unittest.mock as mock
 
-from aceman.broker_client import BrokerClient, BrokerError
-from aceman.engine_client import EngineError
+from server.broker_client import BrokerClient, BrokerError
+from server.engine_client import EngineError
 
 
 class CallNotConnectableTests(unittest.TestCase):

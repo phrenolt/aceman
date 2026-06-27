@@ -39,17 +39,17 @@ WEB_IMAGE = os.environ.get("ACE_WEB_IMAGE", "localhost/aceman-web:vetted")
 ENGINE_URL = os.environ.get(
     "ACE_ENGINE_URL", "http://127.0.0.1:6878").rstrip("/")
 
-# Project root for finding container/engine/run-container.sh — used
+# Project root for finding engine/container/run-container.sh — used
 # when building the engine image.
 PROJECT_ROOT = pathlib.Path(
     os.environ.get("ACE_PROJECT_ROOT")
     or pathlib.Path(__file__).resolve().parent.parent.parent
 )
-RUN_SH = PROJECT_ROOT / "container" / "engine" / "run-container.sh"
+RUN_SH = PROJECT_ROOT / "engine" / "container" / "run-container.sh"
 # Helper used by restart actions to run the same ensure_*_image
 # check the launcher wrapper runs at startup — so a Restart from
 # the web UI picks up source changes the same way a relaunch does.
-ENSURE_IMAGE_HELPER = PROJECT_ROOT / "container" / "ensure-image-helper.sh"
+ENSURE_IMAGE_HELPER = PROJECT_ROOT / "shared" / "container" / "ensure-image-helper.sh"
 
 
 def head_sha() -> str:
