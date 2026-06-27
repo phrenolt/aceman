@@ -12,8 +12,8 @@ from . import _setup  # noqa: F401
 
 import unittest
 
-from aceman.http_io import Request, Response
-from aceman.router import Router
+from server.http_io import Request, Response
+from server.router import Router
 
 
 def _ok(req, ctx): return Response.json(200, {"path": req.path,

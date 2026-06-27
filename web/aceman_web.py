@@ -68,7 +68,7 @@ except ImportError:
 # main); the rest is imported. Keeps this file focused on routing
 # while the supporting classes get their own test surfaces.
 
-from aceman.constants import (
+from server.constants import (
     DEFAULT_ENGINE,
     DEFAULT_HOST,
     DEFAULT_PORT,
@@ -81,22 +81,22 @@ from aceman.constants import (
     MAX_BODY,
     MAX_ENGINE_BYTES,
 )
-from aceman.log_util import (
+from server.log_util import (
     _DISPLAY_DANGEROUS,
     _TERMINAL_DANGEROUS,
     _log,
     _sanitize_msg,
     _terminal_safe,
 )
-from aceman.heartbeat import HeartbeatTracker
-from aceman.engine_client import (
+from server.heartbeat import HeartbeatTracker
+from server.engine_client import (
     EngineError,
     _force_engine,
     _release_engine_session,
     engine_getstream,
     engine_probe,
 )
-from aceman.broker_client import (
+from server.broker_client import (
     BrokerClient,
     BrokerError,
     BrowsersBrokerClient,
@@ -107,15 +107,15 @@ from aceman.broker_client import (
     PlayersBrokerClient,
     WebBrokerClient,
 )
-from aceman.search import SearchError, _NoRedirectHandler, SearchProxy
-from aceman.config_store import Config
-from aceman.favourites import DuplicateCidError, FavStore
-from aceman.history import HistoryStore
-from aceman.desktop_helpers import _desktop_quote_arg
-from aceman.context import RouteContext
-from aceman.http_io import Request, Response
-from aceman.router import Router
-from aceman.routes import register_all as _register_routes
+from server.search import SearchError, _NoRedirectHandler, SearchProxy
+from server.config_store import Config
+from server.favourites import DuplicateCidError, FavStore
+from server.history import HistoryStore
+from server.desktop_helpers import _desktop_quote_arg
+from server.context import RouteContext
+from server.http_io import Request, Response
+from server.router import Router
+from server.routes import register_all as _register_routes
 
 
 # ---------- index template assembly ----------------------------------------
@@ -279,6 +279,10 @@ def _bundle_js() -> str:
 
     for base, prefix in ((lib_dir, "lib"), (shared_dir, "shared"), (domains_dir, "domains")):
         files = base.rglob("*.js") if base.exists() else []
+        # A domain's vendor/ holds third-party scripts (e.g. mpegts.min.js)
+        # that are NOT our ESM source — they're served as standalone
+        # <script>s. Keep them out of the concatenated module bundle.
+        files = [p for p in files if "vendor" not in p.relative_to(base).parts]
         files = sorted(files, key=_domain_order) if base is domains_dir else sorted(files)
         for p in files:
             _add(p.read_text(encoding="utf-8"), f"{prefix}/{p.relative_to(base)}")
@@ -626,9 +630,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
     # /etc/passwd — `name` is matched against keys only, never used to
     # build a filesystem path.
     _STATIC_FILES = {
-        "mpegts.min.js":                          ("application/javascript", "vendor/mpegts.min.js"),
-        "favicon.ico":                            ("image/x-icon",  "favicon.ico"),
-        "curiousconcept-patreon-button-dark.png": ("image/png",     "curiousconcept-patreon-button-dark.png"),
+        "mpegts.min.js":                          ("application/javascript", "ui/domains/playback/vendor/mpegts.min.js"),
+        "favicon.ico":                            ("image/x-icon",  "ui/assets/static/favicon.ico"),
+        "curiousconcept-patreon-button-dark.png": ("image/png",     "ui/assets/static/curiousconcept-patreon-button-dark.png"),
     }
 
     def _handle_static(self, name: str) -> None:

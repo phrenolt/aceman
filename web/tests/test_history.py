@@ -8,7 +8,7 @@ import pathlib
 import tempfile
 import unittest
 
-from aceman.history import HistoryStore
+from server.history import HistoryStore
 
 CID_A = "a" * 40
 CID_B = "b" * 40
@@ -117,7 +117,7 @@ class HistoryStoreTests(unittest.TestCase):
 
     def test_shares_db_with_fav_store(self):
         """HistoryStore must coexist in the same SQLite file as FavStore."""
-        from aceman.favourites import FavStore
+        from server.favourites import FavStore
         db = pathlib.Path(self._tmp.name) / "db.sqlite"
         fav = FavStore(db)
         hist = HistoryStore(db)

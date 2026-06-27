@@ -14,10 +14,10 @@ import pathlib
 import tempfile
 import unittest
 
-from aceman.context import RouteContext
-from aceman.favourites import FavStore
-from aceman.http_io import Request
-from aceman.routes import favourites as fav_routes
+from server.context import RouteContext
+from server.favourites import FavStore
+from server.http_io import Request
+from server.routes import favourites as fav_routes
 
 
 CID_A = "a" * 40
