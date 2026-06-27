@@ -1,0 +1,20 @@
+    <div class="card has-card-label" id="player-card">
+      <span class="card-label">Player</span>
+      <div class="field" id="player-select-row">
+        <span class="field-label">Play in</span>
+        <select id="playback-target" disabled><option>…</option></select>
+        <button id="playback-move" style="display:none">Move current stream here</button>
+        <label id="show-all-row" style="display:flex; align-items:center; gap:.3rem; white-space:nowrap">
+          <input type="checkbox" id="show-all-browsers"> <span class="tip" data-tip="By default duplicate installs are hidden: same-name browsers (UA can't distinguish system vs Flatpak Firefox) and same-name players (e.g. mpv system + mpv Flatpak) each show only one entry. Turn this on to see every detected install.">Show all installs</span>
+        </label>
+      </div>
+      <div class="field" id="buffer-field"
+           title="Seconds of buffer so a short network/engine hiccup doesn't stall the video. Applies to BOTH the browser player and the external player (VLC/mpv). Higher = starts later but stalls less. Off (0) does NOT mean zero — the external player just keeps its own caching setting (e.g. VLC's saved Network caching). On LIVE streams: browser and VLC play a few seconds behind live and get the full buffer; mpv only loads ahead, so it can't buffer more than the few seconds the engine has ready. Applies on the next Play / Restart.">
+        <label class="field-label" for="playback-buffer">Buffer</label>
+        <input type="range" id="playback-buffer" min="0" max="60" step="1" value="0"
+               style="flex:1; min-width:0">
+        <output id="playback-buffer-out"
+                style="min-width:4ch; text-align:right">Off</output>
+      </div>
+      <div class="gate-hint" id="player-hint"></div>
+    </div>

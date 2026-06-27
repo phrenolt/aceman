@@ -15,7 +15,7 @@ from . import _setup  # noqa: F401 — path fix
 
 import unittest
 
-from aceman.log_util import (
+from server.log_util import (
     _DISPLAY_DANGEROUS,
     _TERMINAL_DANGEROUS,
     _sanitize_msg,

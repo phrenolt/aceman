@@ -1,0 +1,47 @@
+  <div class="card has-card-label" id="play-card">
+    <span class="card-label" id="playback-label">
+      <span id="playback-title">Watch</span>
+      <span class="status" id="search-status" style="margin-left:.3rem"></span>
+      <span id="playback-live" class="live-dot" style="display:none">live</span>
+    </span>
+    <div id="play-row-wrap">
+      <div class="row play-row">
+        <button id="play-btn" class="primary icon-btn" title="Play" aria-label="Play">▶</button>
+        <input type="text" id="cid-input"
+               placeholder="Channel name, acestream://, or 40-hex id"
+               autocomplete="off" autocorrect="off" spellcheck="false"
+               autofocus>
+        <button id="cid-clear" class="icon-btn"
+                title="Clear input" aria-label="Clear input"
+                style="display:none">✕</button>
+        <button id="restream-btn" class="icon-btn" title="Restart stream with current settings (keeps the same channel)" aria-label="Restart stream" style="display:none">↺</button>
+      </div>
+      <button id="save-btn" style="display:none">Save as favourite</button>
+    </div>
+    <div class="gate-hint" id="play-hint"></div>
+    <div class="err" id="err"></div>
+    <!-- Search results live in the same card as the input. JS shows
+         this section only when the value is a free-text query (not a
+         40-hex cid or acestream:// URL) AND nothing is actively
+         playing in this tab — when something IS playing, the video
+         takes the room instead. -->
+    <div id="history-section" style="display:none">
+      <div id="history-list"></div>
+    </div>
+    <div id="search-section" style="display:none">
+      <div class="pager" id="search-pager" style="display:none">
+        <button id="search-prev">‹ Prev</button>
+        <span class="status" id="search-info"></span>
+        <button id="search-next">Next ›</button>
+      </div>
+      <div id="search-results"></div>
+    </div>
+    <div id="now-playing" style="display:none">
+      <video id="pb-video" controls playsinline
+             style="display:none; width:100%; max-height:55vh; background:#000; margin:.5rem 0"></video>
+      <div class="row" style="justify-content: center; gap: .5rem; flex-wrap: wrap">
+        <div class="gate-hint" id="pb-video-status" style="margin: 0; min-width: 0; text-align: center" title="Click to hide stats"></div>
+        <button id="show-stats-btn" style="display:none">Display Stats</button>
+      </div>
+    </div>
+  </div>

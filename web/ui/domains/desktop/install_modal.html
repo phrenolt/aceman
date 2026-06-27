@@ -1,0 +1,25 @@
+<div id="install-modal" class="modal-backdrop" style="display:none" role="dialog" aria-modal="true">
+  <div class="modal-card">
+    <h3>Install launcher</h3>
+    <p>Pick how you'd like to install aceman on this machine.</p>
+    <div class="install-opt">
+      <button id="install-with-scheme" class="primary">Install &amp; claim <code>acestream://</code> links</button>
+      <div class="opt-sub">
+        Adds an "aceman" entry to your app launcher and makes clicking
+        <code>acestream://</code> URLs in your browser / chat / file manager
+        open here. If another app currently owns this scheme, your
+        <code>~/.config/mimeapps.list</code> will be copied to
+        <code>mimeapps.list.bk</code> first.
+      </div>
+    </div>
+    <div class="install-opt">
+      <button id="install-only">Just install the launcher</button>
+      <div class="opt-sub">
+        Adds the app-grid entry only — does not change any link associations.
+      </div>
+    </div>
+    <div class="install-opt">
+      <button id="install-cancel">Cancel</button>
+    </div>
+  </div>
+</div>

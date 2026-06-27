@@ -1,0 +1,422 @@
+  :root { color-scheme: light dark;
+          --bg:#111;--fg:#eee;--mut:#888;
+          /* Primary-action accent (filled button backgrounds, hover-
+             tint colour, rename-input border). Pinned to the same
+             dirty-mustard value as --hover so the whole UI reads as
+             one tone — no blue left over anywhere. Kept as a
+             separate variable so a future redesign can drift the
+             "primary action" colour without retouching every hover
+             highlight. */
+          --acc:#b59238;
+          /* Dirty-mustard accent used on input-focus rings and button
+             hover borders. Lifted into a variable so all the places
+             that pick up "hover or focus highlight" stay in sync. */
+          --hover:#b59238;
+          /* Used by .err / .status.bad — kept brighter for foreground text */
+          --err:#f55;
+          /* Darker red for danger-action buttons (Uninstall, Quit, Factory
+             reset, etc.) so they don't shout off the page. */
+          --danger:#c33;
+          /* Play-button green — matches .status.ok and reads as "go". */
+          --go:#6c6; }
+  body { font: 14px/1.4 system-ui, sans-serif; max-width: 760px; margin: 2rem auto; padding: 0 1rem;
+         background: var(--bg); color: var(--fg); }
+  h1 { font-size: 1.4rem; margin: 0 0 .25rem; text-align: center; }
+  /* Header: ACEMAN stays geometrically centred; Patreon icon pins to the right. */
+  /* ACEMAN stays text-align:center; Patreon pins to the right edge.
+     Font shrinks via clamp() so the title never reaches the button.
+     Below 662px ACEMAN shifts left so it can never collide with Patreon. */
+  .site-header { position: relative; text-align: center; margin-bottom: 1.5rem; }
+  @media (max-width: 662px) { .site-header, .site-header h1 { text-align: left; } }
+  .patreon-link {
+    position: absolute; right: 0; top: 50%; transform: translateY(-50%);
+    display: inline-block; line-height: 0;
+    transition: filter .25s ease, transform .25s ease;
+    filter: drop-shadow(0 0 6px rgba(166,77,255,.55));
+  }
+  .patreon-link img { height: 48px; width: auto; display: block; }
+  .patreon-link:hover {
+    filter: drop-shadow(0 0 10px rgba(166,77,255,.85)) drop-shadow(0 0 22px rgba(166,77,255,.5));
+    transform: translateY(calc(-50% - 2px));
+  }
+  .sub { color: var(--mut); font-size: .85rem; margin-bottom: 1.5rem; text-align: center; }
+  input[type=text], input[type=search] {
+                     width: 100%; padding: .5rem; box-sizing: border-box;
+                     background: #1a1a1a; color: var(--fg); border: 1px solid #333; border-radius: 4px; }
+  /* Focus ring on text/search inputs uses the same dirty mustard as
+     button hover so all "this is hot" highlighting stays in one tone.
+     type=search picks up the same rule — the Watch card's unified
+     input is type=search for the native × clear button. */
+  input[type=text]:focus, input[type=search]:focus {
+                           outline: none; border-color: var(--hover);
+                           box-shadow: 0 0 0 2px rgba(181,146,56,.22); }
+  /* Mustard everywhere accent-color applies: checkboxes/radios, the
+     <select> dropdown's currently-highlighted option, AND the native
+     <video> controls' playback timeline & progress. Browsers route
+     the system's "primary tint" through this single property, which
+     is why selecting one value here recolours all four widget classes
+     consistently — no more purple option highlights, no more blue
+     <video> progress bar. */
+  input[type=checkbox], input[type=radio],
+  select,
+  video { accent-color: var(--hover); }
+/*@include domains/playback/buffer.css*/
+  button { padding: .4rem .8rem; margin: .15rem .15rem .15rem 0; cursor: pointer;
+           background: #222; color: var(--fg); border: 1px solid #444; border-radius: 4px; font: inherit; }
+  button:hover:not(:disabled) { border-color: var(--hover); }
+  button:disabled { opacity: .4; cursor: not-allowed; }
+  /* Keyboard-focus ring uses the same mustard the hover/focus rings
+     elsewhere use. Without this the browser falls back to its OS
+     default (blue on most platforms), which is what painted the
+     "blueish tint" on modal buttons. :focus-visible (not :focus)
+     so a mouse click doesn't draw the ring — only Tab/Shift-Tab does. */
+  button:focus { outline: none; }
+  button:focus-visible {
+    outline: 2px solid var(--hover);
+    outline-offset: 2px;
+    border-color: var(--hover);
+  }
+  button.primary { background: var(--acc); color: #000; border-color: var(--acc); font-weight: 600; }
+  button.danger { color: var(--danger); border-color: #553; }
+  button.danger:hover:not(:disabled) {
+    background: rgba(204, 51, 51, .12);
+    border-color: var(--danger);
+  }
+  /* Outline variant: maroon border + default text color. Used for
+     mid-weight destructive actions (Engine Stop, Uninstall image,
+     Uninstall launcher) where bright red text would over-shout the
+     real danger button (Factory reset, which keeps the red text). */
+  button.danger-outline {
+    color: inherit;
+    border-color: var(--danger);
+  }
+  button.danger-outline:hover:not(:disabled) {
+    background: rgba(204, 51, 51, .1);
+    border-color: var(--danger);
+  }
+
+/*@include domains/playback/play_button.css*/
+
+  /* Native <select> chrome is hard-wired to OS theme and looks "90s
+     generic" against the dark card backgrounds. Strip the system
+     widget and re-skin to match input/button: same height, same
+     border, same focus ring. Custom chevron is an inline SVG data URI
+     so there's no extra asset to ship. */
+  select { appearance: none; -webkit-appearance: none; -moz-appearance: none;
+           padding: .42rem 1.9rem .42rem .65rem; font: inherit; cursor: pointer;
+           background-color: #1a1a1a; color: var(--fg);
+           border: 1px solid #333; border-radius: 4px;
+           background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8' fill='none' stroke='%23aaa' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'><path d='M1.5 1.5 L6 6 L10.5 1.5'/></svg>");
+           background-repeat: no-repeat; background-position: right .55rem center;
+           background-size: .65rem auto;
+           min-width: 9rem; max-width: 100%; }
+  select:hover:not(:disabled) { border-color: var(--hover); }
+  select:focus { outline: none; border-color: var(--hover);
+                 box-shadow: 0 0 0 2px rgba(181,146,56,.22); }
+/*@include shared/dropdown.css*/
+  select:disabled { opacity: .5; cursor: not-allowed;
+                    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8' fill='none' stroke='%23555' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'><path d='M1.5 1.5 L6 6 L10.5 1.5'/></svg>"); }
+  /* The <option> popup is rendered by the OS; we can only nudge it on
+     some browsers (Firefox/Chromium honour these). Worth setting so the
+     dropped list at least doesn't flash a white panel on dark themes. */
+  select option { background: #1a1a1a; color: var(--fg); }
+
+  /* A two-up "field" row: label + control on the same baseline.
+     Used for the Player select and the Browser select so both line
+     up consistently regardless of label length. */
+  .field { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap;
+           margin: .35rem 0; }
+  .field-label { min-width: 5.5rem; }
+  .field-suffix { color: var(--mut); font-size: .78rem; }
+  /* Player card's first field ("Play in") is centered horizontally so
+     the label + dropdown sit together in the middle of the card,
+     rather than left-aligned with empty space on the right. When the
+     Move button appears the whole row stays centered as a group —
+     `justify-content: center` does exactly that for flex children. */
+  /* Player card's first row ("Play in" + dropdown + optional Move) is
+     centered as a group — `justify-content: center` keeps the
+     dropdown horizontally in the middle of the card, and when Move
+     appears the whole trio re-centers. The default 5.5rem
+     `min-width` on field-label is meant for left-aligned label
+     columns; drop it just for this row so the label hugs the
+     dropdown instead of pushing it off-center. */
+  .has-card-label .field:first-of-type { justify-content: center; }
+  .has-card-label .field:first-of-type .field-label { min-width: auto; }
+  /* Player card overrides the generic centering so "Play in" and
+     "Buffer" share the same left edge (5.5 rem label column).
+     show-all-row uses margin-left:auto to sit at the row's right end. */
+  #player-card .field:first-of-type { justify-content: flex-start; flex-wrap: wrap; }
+  #player-card .field:first-of-type .field-label { min-width: 5.5rem; flex-shrink: 0; }
+  #player-card .field:first-of-type select { min-width: 0; flex-shrink: 1; }
+  /* show-all label sits at the right; must not shrink to invisibility */
+  #show-all-row { flex-shrink: 0; }
+  /* Thin separator between the player-select row and the buffer row,
+     matching the setup-grid row dividers. */
+  #player-card #buffer-field { border-top: 1px solid #2a2a2a; padding-top: .4rem; }
+  /* Container memory row (Lifecycle section) — subtle, turns red near limit */
+  #container-mem-row { display: flex; }
+  #web-mem-display, #eng-mem-display { font-variant-numeric: tabular-nums; }
+  .mem-cell-warn { color: var(--err) !important; }
+  @keyframes mem-glow {
+    0%, 100% { text-shadow: 0 0 4px rgba(220,60,60,.35); }
+    50%       { text-shadow: 0 0 9px rgba(220,60,60,.75); }
+  }
+  .mem-cell-warn span:first-of-type { animation: mem-glow 1.6s ease-in-out infinite; }
+  .row { display: flex; gap: .5rem; align-items: center; margin: .5rem 0; }
+  .row input { flex: 1; }
+  .card { border: 1px solid #333; border-radius: 6px; padding: .75rem 1rem; margin: 1rem 0;
+          background: #181818; }
+  /* Unified small-caps status look used by Engine status, image-status,
+     desktop-status — and inherited by the LIVE pip and storage badge.
+     Uppercase + letter-spacing makes them visually consistent even
+     though each lives next to a different header. */
+  .status {
+    font-size: .72rem;
+    font-weight: 700;
+    letter-spacing: .05em;
+    text-transform: uppercase;
+    color: var(--mut);
+  }
+  .status.ok { color: #6c6; } .status.bad { color: var(--err); }
+  .err { color: var(--err); margin: .5rem 0; text-align: center; }
+/*@include domains/wordmark/wordmark.css*/
+
+  /* Dotted underline hint for elements with a native title= tooltip
+     (set dynamically by JS). Keep in sync with .tip below. */
+  .has-tooltip {
+    text-decoration: underline dotted var(--mut);
+    text-decoration-thickness: 1px;
+    text-underline-offset: 2px;
+    cursor: help;
+  }
+
+  /* Custom styled hover tooltip: add data-tip="…" + class="tip" to any
+     inline element. Shows a dark popup above on hover — no JS needed. */
+  .tip {
+    position: relative;
+    cursor: help;
+    text-decoration: underline dotted var(--mut);
+    text-decoration-thickness: 1px;
+    text-underline-offset: 2px;
+  }
+  .tip::after {
+    content: attr(data-tip);
+    position: absolute;
+    left: 50%;
+    bottom: calc(100% + 8px);
+    transform: translateX(-50%);
+    background: #141414;
+    color: #d6d6d6;
+    border: 1px solid #363636;
+    border-radius: 5px;
+    padding: .5rem .75rem;
+    font-size: .78rem;
+    font-style: normal;
+    font-weight: normal;
+    line-height: 1.45;
+    white-space: normal;
+    max-width: 270px;
+    min-width: 160px;
+    width: max-content;
+    text-align: left;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity .18s;
+    z-index: 300;
+    box-shadow: 0 4px 14px rgba(0,0,0,.6);
+  }
+  .tip:hover::after { opacity: 1; }
+
+  /* Favourites storage badge: same micro-cap typography as .status.ok,
+     no chip background — matches "RUNNING" / "INSTALLED" elsewhere. */
+  .badge {
+    font-size: .72rem;
+    font-weight: 700;
+    letter-spacing: .05em;
+    text-transform: uppercase;
+    color: #6c6;
+    margin-left: .5rem;
+  }
+
+  /* Two-column on ultra-wide; stack on narrow. Right column comes first in
+     the DOM so on phones/laptops you see Engine/Player/Play above the long
+     favourites list. Each column is a flex stack with its own gap so both
+     columns line up at the same top edge — relying on per-card margins
+     leaves the second column visually offset. */
+  /* All major cards are direct children of .main so we can position
+     them with grid-template-areas. Source order = narrow-screen
+     order: top-row → search → playback → favourites → setup. The
+     wide-screen media query below promotes favourites to its own
+     left column spanning every row. */
+  .main { display: grid; gap: 1rem; grid-template-columns: 1fr; min-width: 0; }
+  .main > .card { margin: 0; min-width: 0; }
+  /* Three-up row across the top of the right column: Engine / Playback /
+     Play. Stacks on narrow viewports; goes side-by-side on wide ones.
+     min-width: 0 inside lets a card's text wrap rather than blow out
+     the grid. */
+  .top-row { display: grid; gap: 1rem; grid-template-columns: 1fr; }
+  .top-row > .card { min-width: 0; }
+  /* The Play card has less content than its row neighbours, so when the
+     row stretches them to equal height it sat with empty space below the
+     input. Make it a flex column centered vertically so the row of
+     button+input floats in the middle of whatever height the tallest
+     sibling forces. */
+  #play-card { display: flex; flex-direction: column; justify-content: center; }
+  /* Engine card: same vertical-centering treatment as the play card so
+     the checkbox + button rows float in the middle of whatever height
+     the tallest sibling (playback card) forces. */
+  #engine-card { display: flex; flex-direction: column; justify-content: center; }
+  /* Outer wrap: save-btn sits to the right when there's room, wraps centred below if not. */
+  #play-row-wrap { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: .5rem; margin: .5rem 0; }
+  /* play-row is nowrap internally; parent handles vertical margin. */
+  .play-row { flex-wrap: nowrap; justify-content: center; margin: 0; }
+  #cid-input { width: 41ch; max-width: 41ch; flex: 0 1 auto; min-width: 12ch; padding-top: .3rem; padding-bottom: .3rem; }
+  /* Symmetric small padding keeps glyphs centred while staying visually tight. */
+  #cid-clear    { padding: .3rem .15rem; }
+  #restream-btn { padding: .3rem .15rem; }
+  /* Match vertical padding of the adjacent icon buttons. */
+  #save-btn { padding: .3rem .8rem; }
+
+  /* Corner label: a small "fieldset legend"-style tag in the top-left
+     of a card. Sits half-overlapping the card border so it reads as a
+     proper title rather than a row of body text. Card needs
+     position:relative + a bit of top padding so the absolutely-
+     positioned label has room above its first child. */
+  .card.has-card-label { position: relative; padding-top: 1.4rem; }
+  .card-label {
+    position: absolute;
+    top: -.55rem;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: .1rem .55rem;
+    background: var(--bg);
+    border: 1px solid #444;
+    border-radius: 999px;
+    font-size: .72rem;
+    font-weight: 600;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    color: #ddd;
+    line-height: 1.2;
+    white-space: nowrap;
+  }
+  /* .status / .badge inside a card-label keep their own uppercase
+     typography — they're meant to read as small-cap state labels next
+     to the card title, same family as the LIVE pip on Playback. */
+
+/*@include domains/playback/live_dot.css*/
+
+  /* Icon-only buttons (▶ in fav/search rows). Slightly larger glyph,
+     fixed footprint so adjacent rows align even with one-character text. */
+  button.icon-btn {
+    font-size: 1rem;
+    line-height: 1;
+    padding: .3rem .55rem;
+    min-width: 2rem;
+  }
+
+  @media (min-width: 1100px) {
+    /* No align-items override here — grid items default to `stretch`,
+       which gives all three cards the same height (the tallest one
+       wins). The earlier `align-items: start` left them as ragged
+       shorter pills next to a tall card. */
+    /* Top row is Player + Engine; Playback (with its long content-id
+       input and video) now lives full-width below. */
+    .top-row { grid-template-columns: 1fr 1fr; }
+    /* WSL mode hides the Player card; without this the Engine card
+       gets stranded in the left half. .top-row-solo is added by
+       app.js when isWslMode is true. */
+    .top-row.top-row-solo { grid-template-columns: 1fr; }
+  }
+  @media (min-width: 960px) {
+    body { max-width: 1700px; }
+  }
+  @media (min-width: 1150px) {
+    /* Wide-screen layout: favourites get their own left column spanning
+       every row of the right side (top-row → search → play → setup),
+       and stick in view as the user scrolls through the longer
+       right-hand column. */
+    .main { grid-template-columns: minmax(300px, 1fr) 2fr;
+            grid-template-areas:
+              "favs play"
+              "favs top-row"
+              "favs setup";
+            align-items: start; }
+    #play-card   { grid-area: play; }
+    #top-row     { grid-area: top-row; }
+    #favs-card   { grid-area: favs; position: sticky; top: 1rem; z-index: 2; }
+    #setup-card  { grid-area: setup; }
+  }
+
+/*@include domains/favourites/favourites.css*/
+
+  /* Setup & tools card: structured rows + danger zone */
+  .setup-row { padding: .6rem 0; border-top: 1px solid #333; }
+  .setup-row:first-of-type { border-top: none; padding-top: .4rem; }
+  /* Engine image / App launcher / Lifecycle go side-by-side on wide
+     screens; stack on narrow. Inside the grid the horizontal dividers
+     would be visual noise — the columns separate the rows already.
+     Subtle vertical separators on wide screens stand in for them. */
+  .setup-grid { display: grid; gap: .6rem 1.2rem; grid-template-columns: 1fr; }
+  .setup-grid .setup-row { padding-top: .4rem; }
+  @media (min-width: 720px) {
+    .setup-grid { grid-template-columns: 1fr 1fr 1fr; align-items: start; }
+    /* In 3-column mode the columns act as separators — horizontal
+       dividers are visual noise. In single-column they stay visible. */
+    .setup-grid .setup-row { border-top: none; }
+    .setup-grid .setup-row + .setup-row { border-left: 1px solid #333; padding-left: 1.2rem; }
+    /* GPU card spans the full grid width; reset the left-border that the
+       sibling rule above would otherwise apply. */
+    #gpu-card { grid-column: 1 / -1; border-left: none; border-top: 1px solid #333; padding-left: 0; }
+    #gpu-controls .field { justify-content: flex-start; }
+  }
+  /* Center GPU controls on narrow screens */
+  #gpu-controls .field { justify-content: center; }
+  .setup-row-head { display: flex; justify-content: space-between;
+                    align-items: center; margin-bottom: .35rem; white-space: nowrap; }
+  .danger-zone { border-top: 1px dashed #553; margin-top: .6rem; }
+
+/*@include domains/logs/logs.css*/
+/*@include domains/image/image.css*/
+
+  /* Tooltip-style hint shown next to disabled buttons */
+  .gate-hint { color: var(--mut); font-size: .8rem; margin-left: .5rem; }
+  #play-hint { margin-left: 0; text-align: center; display: block; }
+  .gate-hint.warn { color: var(--err); }
+  #pb-video-status { cursor: pointer; transition: opacity .15s; }
+  #pb-video-status:hover { opacity: .45; }
+
+  /* Now-playing channel label — lives inside the Playback card-label.
+     The card-label is absolutely positioned at the top edge, so cap it
+     to the card width and let long names wrap rather than overflow. */
+  #playback-label { max-width: calc(100% - 1.5rem); white-space: normal;
+                    text-align: center; }
+  #playback-title .sub { color: var(--mut); font-weight: normal;
+                         margin-left: .4rem; text-transform: none; }
+
+  /* Modal: install-options dialog */
+  .modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.65);
+                    display: flex; align-items: center; justify-content: center;
+                    z-index: 100; padding: 1rem; }
+  .modal-card { background: #181818; border: 1px solid #444; border-radius: 8px;
+                padding: 1.25rem 1.5rem; max-width: 540px; width: 100%;
+                box-shadow: 0 8px 24px rgba(0,0,0,.5); }
+  .modal-card h3 { margin: 0 0 .5rem; font-size: 1.05rem; }
+  .modal-card p { margin: .25rem 0 1rem; color: var(--mut); font-size: .9rem; }
+  .install-opt { margin: .75rem 0; }
+  .install-opt button { display: block; width: 100%; text-align: left;
+                        padding: .55rem .8rem; }
+  .install-opt .opt-sub { margin: .25rem .2rem 0; color: var(--mut);
+                          font-size: .78rem; }
+
+/*@include domains/favourites/favname.css*/
+
+  /* Search + pagination */
+  #fav-search { font-size: .9rem; }
+  .pager { display: flex; justify-content: space-between; align-items: center;
+           font-size: .8rem; margin-top: .5rem; margin-bottom: .3rem; }
+  .pager button { padding: .25rem .6rem; font-size: .85rem; }
+
+/*@include domains/diagnostics/diagnostics.css*/
+
+/*@include shared/notice.css*/

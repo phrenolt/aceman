@@ -1,0 +1,7 @@
+  .image-tag { font-family: ui-monospace, monospace; font-size: .75rem;
+               color: var(--mut); margin-left: .35rem; }
+  #image-log { max-height: 240px; overflow: auto; background: #0a0a0a;
+               border: 1px solid #222; border-radius: 4px;
+               padding: .5rem .6rem; font-size: .72rem;
+               font-family: ui-monospace, monospace; white-space: pre-wrap;
+               word-break: break-all; margin-top: .5rem; }

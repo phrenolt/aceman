@@ -1,0 +1,16 @@
+        <div class="setup-row">
+          <div class="setup-row-head" style="justify-content:center;gap:.5rem">
+            <span class="has-tooltip" id="image-label">Engine image</span>
+            <span class="status" id="image-status">…</span>
+          </div>
+          <div class="row" style="justify-content:center">
+            <button id="image-install" disabled title="Build (or rebuild) the local container image the engine runs in. Pulls base layers from the registry; takes a couple of minutes the first time.">…</button>
+            <button id="image-uninstall" disabled class="danger-outline" title="Remove the local engine image. Any running container is stopped first.">Uninstall</button>
+            <span class="status" id="image-hint" style="display:none"></span>
+          </div>
+          <details id="image-log-wrap" style="display:none; margin-top:.5rem">
+            <summary style="cursor:pointer; font-size:.8rem; color: var(--mut)">Build log</summary>
+            <pre id="image-log"></pre>
+          </details>
+          <code id="image-tag" style="display:none"></code>
+        </div>

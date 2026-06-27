@@ -4,6 +4,12 @@
 
 <h1 align="center">aceman</h1>
 
+<p align="center">
+  <a href="https://github.com/curiousconcept/aceman/actions/workflows/tests.yml">
+    <img src="https://github.com/curiousconcept/aceman/actions/workflows/tests.yml/badge.svg?branch=main" alt="tests">
+  </a>
+</p>
+
 Watch [Ace Stream](https://acestream.org) content from a **sandboxed
 engine** — a rootless Podman container, managed and played through a
 browser UI (a stdlib-Python web app), or with playback delegated to your
@@ -48,8 +54,8 @@ cd aceman
 **One-time:** download the Ace Stream engine tarball (proprietary, not
 shipped here) from **https://docs.acestream.net/products/#linux** — the
 **Linux → Ubuntu, amd64 / py3.10** build — and save it as
-`container/engine/dist/engine.tar.gz`. Details + hash verification:
-[`container/engine/README.md`](container/engine/README.md).
+`engine/container/dist/engine.tar.gz`. Details + hash verification:
+[`engine/container/README.md`](engine/container/README.md).
 
 Then:
 
@@ -125,7 +131,7 @@ plus a couple of shell tools. The single pinned `pip install` above is the
 
 | Topic                         | Doc                                                  |
 |-------------------------------|------------------------------------------------------|
-| Engine image (build/run/env)  | [`container/engine/README.md`](container/engine/README.md) |
+| Engine image (build/run/env)  | [`engine/container/README.md`](engine/container/README.md) |
 | Web app (UI, endpoints, flags)| [`web/README.md`](web/README.md)                     |
 | Broker (allow-list, socket)   | [`broker/README.md`](broker/README.md)               |
 | CLI `aceman` + favourites     | [`docs/cli.md`](docs/cli.md)                          |
