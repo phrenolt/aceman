@@ -5,7 +5,7 @@
 import { $, showError, showBusy, hideBusy } from './shared/dom.js';
 import { api } from './shared/api.js';
 import { mountAcemanSelect } from './shared/dropdown.js';
-import { mode, isWslMode, setMode, setWslMode } from './shared/runtime.js';
+import { mode, isRemoteDesktop, setMode, setRemoteDesktop } from './shared/runtime.js';
 import { KEYS } from './lib/storage_keys.js';
 import { initWordmark } from './domains/wordmark/index.js';
 import { initDiagnostics } from './domains/diagnostics/index.js';
@@ -63,15 +63,15 @@ import { parseId, loadPlayers, loadBrowsers, detectCurrentBrowser, detectedPlaye
     const badge = describeFavouritesStorageBadge(mode, cfg.favorites_path);
     $('storage-badge').textContent = badge.text;
     $('storage-badge').title = badge.title;
-    // Hide Linux-desktop-only affordances when served to a Windows-side browser.
-    setWslMode(!!cfg.is_wsl);
-    if (isWslMode) {
-      // App launcher row: no xdg-mime or .desktop on Windows.
+    // Hide Linux-desktop-only affordances when the browser is on another host.
+    setRemoteDesktop(!!cfg.remote_desktop);
+    if (isRemoteDesktop) {
+      // App launcher row: no Linux desktop to write a .desktop file to.
       const desktopRow = $('desktop-row');
       if (desktopRow) desktopRow.style.display = 'none';
       // Player/browser selector: Linux-side targets are unreachable from
-      // the Windows browser. Hide selection, keep the buffer slider
-      // (WSL always plays in-browser).
+      // a browser on another host. Hide selection, keep the buffer slider
+      // (these sessions always play in-browser).
       const playerSelectRow = $('player-select-row');
       if (playerSelectRow) playerSelectRow.style.display = 'none';
       const showAllRow = $('show-all-row');

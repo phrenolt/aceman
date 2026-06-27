@@ -16,7 +16,7 @@
 // updateSaveButton, browserFavs), search (refreshSearchSection,
 // refreshClearButton), detection (player/browser lists), gpu (param
 // builder + encode label). Plus the generic shared/notice component and
-// the shared/runtime flags (mode, isWslMode). This domain owns the live
+// the shared/runtime flags (mode, isRemoteDesktop). This domain owns the live
 // stream state (current, livePlaybackTarget, cfg) + the search/history
 // layout helper (alignSearchToInput, used by those sibling cards).
 
@@ -42,7 +42,7 @@ import { allFavs, loadFavs, updateSaveButton, browserFavs } from '../favourites/
 import { refreshSearchSection, refreshClearButton } from '../search/index.js';
 import { detectedPlayers, detectedBrowsers, _currentBrowserName } from './detection.js';
 import { buildGpuParams, gpuEncodeLabel } from '../gpu/index.js';
-import { mode, isWslMode } from '../../shared/runtime.js';
+import { mode, isRemoteDesktop } from '../../shared/runtime.js';
 
 // The active stream, just enough to drive the Save button: we no longer
 // own the session (the host shell does via acestream:// dispatch), so
@@ -651,14 +651,14 @@ export function renderPlaybackTargets() {
   }
   sel.disabled = false;
 
-  // In WSL mode the Player card is hidden — but we still need a sane
-  // default selection for the Play button to use. Every detected
+  // In remote-desktop mode the Player card is hidden — but we still need
+  // a sane default selection for the Play button to use. Every detected
   // external player / browser belongs to the Linux side and isn't
-  // reachable from the Windows browser viewing this page; the only
-  // target that actually works is the in-tab mpegts.js stream. Force
-  // it here and persist, so a stale `default_player: vlc` left over
-  // from a previous non-WSL session doesn't silently break Play.
-  const wanted = isWslMode ? 'browser' : _currentTargetValue();
+  // reachable from a browser on another host; the only target that
+  // actually works is the in-tab mpegts.js stream. Force it here and
+  // persist, so a stale `default_player: vlc` left over from a previous
+  // local-desktop session doesn't silently break Play.
+  const wanted = isRemoteDesktop ? 'browser' : _currentTargetValue();
   const wantedAvailable = wanted
       && Array.from(sel.options).some(o => o.value === wanted);
   if (wantedAvailable) {
@@ -667,13 +667,13 @@ export function renderPlaybackTargets() {
     sel.value = sel.options[0].value;
     persistPlaybackTarget(sel.value, /*silent=*/true);
   }
-  // Independent of the path above: if we're in WSL and the persisted
-  // config still names a Linux-side target, rewrite it to 'browser'
-  // so the next /api/config read agrees with what we just selected.
-  const wslConfigDrift = isWslMode
+  // Independent of the path above: in remote-desktop mode, if the
+  // persisted config still names a Linux-side target, rewrite it to
+  // 'browser' so the next /api/config read agrees with what we selected.
+  const remoteConfigDrift = isRemoteDesktop
       && wantedAvailable
       && cfg && cfg.playback_mode !== 'browser';
-  if (wslConfigDrift) {
+  if (remoteConfigDrift) {
     persistPlaybackTarget('browser', /*silent=*/true);
   }
   refreshPlaybackMoveButton();

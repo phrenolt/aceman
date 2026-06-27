@@ -3,22 +3,22 @@
 // handler). The status→display mapping is pure and unit-tested in
 // lib/cards/desktop_shortcut_status.js; this is the DOM + the calls.
 //
-// Hidden in WSL mode — writing a Linux .desktop file from a
-// Windows-served session would be confusing at best. `isWslMode` is a
-// transitional back-ref from app.js (set during init) until config is
-// its own module.
+// Hidden in remote-desktop mode — writing a Linux .desktop file when the
+// user's real desktop is elsewhere (WSL, a Lima VM, a remote box) would
+// be confusing at best. `isRemoteDesktop` is a transitional back-ref from
+// app.js (set during init) until config is its own module.
 
 import { $, showError } from '../../shared/dom.js';
 import { api } from '../../shared/api.js';
 import { runModal } from '../../lib/modal.js';
 import { describeDesktopShortcutStatus } from './lib/desktop_shortcut_status.js';
-import { isWslMode } from '../../shared/runtime.js';
+import { isRemoteDesktop } from '../../shared/runtime.js';
 
 export async function refreshDesktopEntry() {
-  // No-op in WSL mode — the App-launcher row is hidden and writing
-  // a Linux .desktop file from a Windows-served session would be
-  // confusing at best, broken at worst.
-  if (isWslMode) return;
+  // No-op in remote-desktop mode — the App-launcher row is hidden and
+  // writing a Linux .desktop file the user's real desktop never sees
+  // would be confusing at best, broken at worst.
+  if (isRemoteDesktop) return;
   let s = null;
   try { s = await api('/api/desktop-entry/app'); }
   catch (_) { /* leave s = null; describeDesktopShortcutStatus collapses to 'unavailable' */ }

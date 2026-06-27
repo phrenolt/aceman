@@ -24,9 +24,10 @@ def get_storage_mode(req: Request, ctx: RouteContext) -> Response:
         # data lives without diving into config files.
         "favorites_path": str(ctx.db_path) if ctx.store else None,
         # Frontend hides Linux-desktop-only affordances (App launcher,
-        # acestream:// scheme handler) when this is true; the user is
-        # reaching the page from a Windows browser via the WSL guest IP.
-        "is_wsl": ctx.is_wsl,
+        # acestream:// scheme handler) when this is true: the page is
+        # served to a browser on another host (WSL, a Lima VM, a remote
+        # box), so a local Linux desktop action can't take effect.
+        "remote_desktop": ctx.remote_desktop,
     })
 
 

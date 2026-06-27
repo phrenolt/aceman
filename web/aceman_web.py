@@ -2013,12 +2013,18 @@ def main(argv: list[str] | None = None) -> int:
                         "stays up. Default: 60.")
     p.add_argument("--wsl", action="store_true",
                    default=os.environ.get("ACE_WSL") == "1",
-                   help="WSL mode: the page is being served to a Windows-side "
-                        "browser across the WSL guest IP. Hides the App-launcher "
-                        "card and the acestream:// scheme-handler buttons in the "
-                        "UI (they only make sense for a Linux desktop). The "
-                        "aceman_web shell wrapper sets this automatically when "
-                        "invoked with --wsl.")
+                   help="WSL mode: the page is served to a Windows-side browser "
+                        "across the WSL guest IP. Implies --remote-desktop. The "
+                        "aceman_web shell wrapper sets this automatically when it "
+                        "detects WSL.")
+    p.add_argument("--remote-desktop", action="store_true",
+                   default=os.environ.get("ACE_REMOTE_DESKTOP") == "1",
+                   help="The page is served to a browser on a DIFFERENT host "
+                        "than this Linux box (WSL, a Lima VM on macOS, a remote "
+                        "server). Hides the App-launcher card and the "
+                        "acestream:// scheme-handler buttons — they only act on a "
+                        "local Linux desktop the user isn't using. --wsl implies "
+                        "this; the macOS (Lima) kit passes it explicitly.")
     p.add_argument("url", nargs="?", default=None,
                    help="optional acestream://<cid> URL to autoplay. Passed by "
                         "the desktop entry's xdg-mime dispatch when the user "
@@ -2089,7 +2095,7 @@ def main(argv: list[str] | None = None) -> int:
         desktop_entry=Handler.desktop_entry,
         search_proxy=Handler.search_proxy,
         heartbeat=Handler.heartbeat,
-        is_wsl=args.wsl,
+        remote_desktop=args.wsl or args.remote_desktop,
         # Engine-status route reads this so the polling tab can pick
         # up `acestream://` hand-offs (POST /api/play-request) from
         # a second wrapper invocation. Pure peek — the claim path
