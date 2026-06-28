@@ -325,7 +325,7 @@
     .top-row { grid-template-columns: 1fr 1fr; }
     /* Remote-desktop mode hides the Player card; without this the Engine
        card gets stranded in the left half. .top-row-solo is added by
-       app.js when isRemoteDesktop is true. */
+       app.js when noLocalDesktop is true. */
     .top-row.top-row-solo { grid-template-columns: 1fr; }
   }
   @media (min-width: 960px) {

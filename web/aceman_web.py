@@ -2014,17 +2014,17 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--wsl", action="store_true",
                    default=os.environ.get("ACE_WSL") == "1",
                    help="WSL mode: the page is served to a Windows-side browser "
-                        "across the WSL guest IP. Implies --remote-desktop. The "
+                        "across the WSL guest IP. Implies --no-local-desktop. The "
                         "aceman_web shell wrapper sets this automatically when it "
                         "detects WSL.")
-    p.add_argument("--remote-desktop", action="store_true",
-                   default=os.environ.get("ACE_REMOTE_DESKTOP") == "1",
-                   help="The page is served to a browser on a DIFFERENT host "
-                        "than this Linux box (WSL, a Lima VM on macOS, a remote "
-                        "server). Hides the App-launcher card and the "
-                        "acestream:// scheme-handler buttons — they only act on a "
-                        "local Linux desktop the user isn't using. --wsl implies "
-                        "this; the macOS (Lima) kit passes it explicitly.")
+    p.add_argument("--no-local-desktop", action="store_true",
+                   default=os.environ.get("ACE_NO_LOCAL_DESKTOP") == "1",
+                   help="No usable local desktop here: hide the App-launcher "
+                        "card and the acestream:// scheme-handler buttons, which "
+                        "only act on a Linux desktop at THIS machine. Set when "
+                        "the page is served to a browser on another host — a WSL "
+                        "or Lima guest, or a remote server. --wsl implies this; "
+                        "the macOS (Lima) kit passes it explicitly.")
     p.add_argument("url", nargs="?", default=None,
                    help="optional acestream://<cid> URL to autoplay. Passed by "
                         "the desktop entry's xdg-mime dispatch when the user "
@@ -2095,7 +2095,7 @@ def main(argv: list[str] | None = None) -> int:
         desktop_entry=Handler.desktop_entry,
         search_proxy=Handler.search_proxy,
         heartbeat=Handler.heartbeat,
-        remote_desktop=args.wsl or args.remote_desktop,
+        no_local_desktop=args.wsl or args.no_local_desktop,
         # Engine-status route reads this so the polling tab can pick
         # up `acestream://` hand-offs (POST /api/play-request) from
         # a second wrapper invocation. Pure peek — the claim path

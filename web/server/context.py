@@ -55,13 +55,14 @@ class RouteContext:
     web_client: Optional[WebBrokerClient] = None
     search_proxy: Optional[SearchProxy] = None
     heartbeat: HeartbeatTracker = field(default_factory=HeartbeatTracker)
-    # True when the page is served to a browser on a different host than
-    # this Linux box — WSL (auto-detected), a Lima VM on macOS, or a
-    # remote server. The frontend reads it via /api/storage-mode and hides
-    # Linux-desktop-only affordances (App launcher card, acestream://
-    # scheme-handler registration) that can't act on a desktop the user
-    # isn't using. Set from `aceman_web --wsl` / `--remote-desktop`.
-    remote_desktop: bool = False
+    # True when there's no Linux desktop the user can use at this server —
+    # the page is served to a browser on another host: WSL (auto-detected),
+    # a Lima VM on macOS, or a remote server. The frontend reads it via
+    # /api/storage-mode and hides Linux-desktop-only affordances (App
+    # launcher card, acestream:// scheme-handler registration) that can't
+    # act on a desktop the user isn't at. Set from `aceman_web --wsl` /
+    # `--no-local-desktop`.
+    no_local_desktop: bool = False
     # Peek (don't consume) the pending-play cid that a second wrapper
     # invocation pushed via POST /api/play-request. The engine.status
     # route surfaces the value so the frontend's polling tab can claim

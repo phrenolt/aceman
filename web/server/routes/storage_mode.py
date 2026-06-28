@@ -27,7 +27,7 @@ def get_storage_mode(req: Request, ctx: RouteContext) -> Response:
         # acestream:// scheme handler) when this is true: the page is
         # served to a browser on another host (WSL, a Lima VM, a remote
         # box), so a local Linux desktop action can't take effect.
-        "remote_desktop": ctx.remote_desktop,
+        "no_local_desktop": ctx.no_local_desktop,
     })
 
 

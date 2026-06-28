@@ -5,7 +5,7 @@
 import { $, showError, showBusy, hideBusy } from './shared/dom.js';
 import { api } from './shared/api.js';
 import { mountAcemanSelect } from './shared/dropdown.js';
-import { mode, isRemoteDesktop, setMode, setRemoteDesktop } from './shared/runtime.js';
+import { mode, noLocalDesktop, setMode, setNoLocalDesktop } from './shared/runtime.js';
 import { KEYS } from './lib/storage_keys.js';
 import { initWordmark } from './domains/wordmark/index.js';
 import { initDiagnostics } from './domains/diagnostics/index.js';
@@ -64,8 +64,8 @@ import { parseId, loadPlayers, loadBrowsers, detectCurrentBrowser, detectedPlaye
     $('storage-badge').textContent = badge.text;
     $('storage-badge').title = badge.title;
     // Hide Linux-desktop-only affordances when the browser is on another host.
-    setRemoteDesktop(!!cfg.remote_desktop);
-    if (isRemoteDesktop) {
+    setNoLocalDesktop(!!cfg.no_local_desktop);
+    if (noLocalDesktop) {
       // App launcher row: no Linux desktop to write a .desktop file to.
       const desktopRow = $('desktop-row');
       if (desktopRow) desktopRow.style.display = 'none';
