@@ -274,6 +274,39 @@ The web sends one JSON action per line to the broker over a `0600` unix
 socket; the broker owns every host-touching operation. That boundary is
 the security model — see [`docs/security.md`](docs/security.md).
 
+### Security note — the engine gateway
+
+The Ace Stream engine's HTTP API (port `6878`) sends permissive CORS
+(`Access-Control-Allow-Origin: *`, and it reflects the request `Origin`
+with `Access-Control-Allow-Credentials: true`). If that port is published
+on `127.0.0.1`, **any website you have open can reach it**: the page's
+JavaScript runs on *your* machine, so `fetch('http://127.0.0.1:6878/…')`
+hits your own loopback, and the open CORS lets the site read the replies
+— it could fingerprint the engine or start streams (joining swarms on
+your machine). Binding to loopback stops other *machines*, not your own
+*browser*. We can't change the engine's headers (proprietary).
+
+**So by default aceman never publishes the engine's port directly.** A
+small **engine gateway** container fronts it: it publishes `6878`,
+forwards to the engine over the internal bridge, and **refuses any request
+carrying `Sec-Fetch-Site`** — a header every browser sends and page JS
+cannot forge or remove, while native players (VLC, mpv, the `aceman` CLI)
+never send it. So browsers are blocked; real players pass. It's a
+transparent byte-splice, so streams/seek/throughput are unaffected. Even
+the "open on another device" LAN toggle goes through the gateway, so a
+browser on another LAN device is blocked too — only real players get in.
+
+Opt out with `ACE_ENGINE_GATEWAY=0` to publish the engine's API straight
+to the host like older versions (reachable from any browser — not
+recommended). Defence-in-depth that still applies regardless:
+
+- The exposure only existed **while a tab from a hostile site was open**;
+  aceman's idle auto-shutdown also limits the window.
+- **Chromium** browsers block localhost access via Private Network Access;
+  **Firefox** does not — which is why the gateway matters most there.
+- Container hardening limits what a *compromised* engine could do to your
+  host (it can't reach host files outside the explicit mounts).
+
 ## Motivation
 
 Built by someone security-conscious who doesn't want to guess what's
