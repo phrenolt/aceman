@@ -1540,6 +1540,20 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return True  # explicit non-loopback bind; skip check
         return self.headers.get("Host", "") in Handler.allowed_hosts
 
+    def _cross_site(self) -> bool:
+        """True for a cross-site browser request. Browsers send
+        ``Sec-Fetch-Site`` on every request and page JS cannot forge or
+        remove it; a value of ``cross-site`` / ``same-site`` means another
+        site's page drove this request. Our own UI is ``same-origin``, a
+        typed URL / top-level navigation is ``none``, and native clients
+        (curl / VLC / the aceman CLI) send no header at all — all of those
+        pass. This closes the one CSRF gap the JSON-content-type check
+        below can't: a *simple* cross-site GET (e.g. /api/stream/proxy)
+        that needs no preflight — a hostile page could blind-trigger it
+        (start a stream) even though it can't read the response."""
+        site = (self.headers.get("Sec-Fetch-Site") or "").lower()
+        return site in ("cross-site", "same-site")
+
     def _content_type_json(self) -> bool:
         """CSRF defense. Cross-origin POST/DELETE/PATCH with Content-Type
         application/json is *not* in CORS' safelist — the browser issues
@@ -1689,6 +1703,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
         # caller. Refuse before we reveal anything.
         if not self._host_allowed():
             return self._error(421, "host header not in allow-list")
+        # CSRF for simple GETs (no preflight, unlike POST/DELETE): refuse a
+        # cross-site browser request to our API so a hostile page can't
+        # blind-trigger /api/stream/proxy (start a stream). The UI itself,
+        # top-level navigations, and native clients all pass — see
+        # _cross_site. Static assets / the page are intentionally not gated.
+        if self.path.startswith("/api/") and self._cross_site():
+            return self._error(403, "cross-site request refused")
         # Router takes precedence; legacy if/elif handles whatever
         # hasn't been migrated yet (static assets, stream proxy, etc.).
         if self._try_router("GET"):
@@ -1735,6 +1756,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def do_POST(self):  # noqa: N802
         if not self._host_allowed():
             return self._error(421, "host header not in allow-list")
+        if self._cross_site():
+            return self._error(403, "cross-site request refused")
         if not self._content_type_json():
             # Cross-origin requests can reach us via CORS-safelisted
             # Content-Types (text/plain, form-encoded, multipart). The
@@ -1939,6 +1962,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def do_DELETE(self):  # noqa: N802
         if not self._host_allowed():
             return self._error(421, "host header not in allow-list")
+        if self._cross_site():
+            return self._error(403, "cross-site request refused")
         # DELETEs in this app never carry a body, but a CSRF attacker
         # could still issue a cross-origin DELETE — apply the same
         # content-type gate to force preflight, just like POST.
