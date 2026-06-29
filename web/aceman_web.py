@@ -631,6 +631,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
     # build a filesystem path.
     _STATIC_FILES = {
         "mpegts.min.js":                          ("application/javascript", "ui/domains/playback/vendor/mpegts.min.js"),
+        "qrcode-generator.js":                    ("application/javascript", "ui/domains/playback/vendor/qrcode-generator.js"),
         "favicon.ico":                            ("image/x-icon",  "ui/assets/static/favicon.ico"),
         "curiousconcept-patreon-button-dark.png": ("image/png",     "ui/assets/static/curiousconcept-patreon-button-dark.png"),
     }
@@ -2013,12 +2014,18 @@ def main(argv: list[str] | None = None) -> int:
                         "stays up. Default: 60.")
     p.add_argument("--wsl", action="store_true",
                    default=os.environ.get("ACE_WSL") == "1",
-                   help="WSL mode: the page is being served to a Windows-side "
-                        "browser across the WSL guest IP. Hides the App-launcher "
-                        "card and the acestream:// scheme-handler buttons in the "
-                        "UI (they only make sense for a Linux desktop). The "
-                        "aceman_web shell wrapper sets this automatically when "
-                        "invoked with --wsl.")
+                   help="WSL mode: the page is served to a Windows-side browser "
+                        "across the WSL guest IP. Implies --no-local-desktop. The "
+                        "aceman_web shell wrapper sets this automatically when it "
+                        "detects WSL.")
+    p.add_argument("--no-local-desktop", action="store_true",
+                   default=os.environ.get("ACE_NO_LOCAL_DESKTOP") == "1",
+                   help="No usable local desktop here: hide the App-launcher "
+                        "card and the acestream:// scheme-handler buttons, which "
+                        "only act on a Linux desktop at THIS machine. Set when "
+                        "the page is served to a browser on another host — a WSL "
+                        "or Lima guest, or a remote server. --wsl implies this; "
+                        "the macOS (Lima) kit passes it explicitly.")
     p.add_argument("url", nargs="?", default=None,
                    help="optional acestream://<cid> URL to autoplay. Passed by "
                         "the desktop entry's xdg-mime dispatch when the user "
@@ -2089,7 +2096,7 @@ def main(argv: list[str] | None = None) -> int:
         desktop_entry=Handler.desktop_entry,
         search_proxy=Handler.search_proxy,
         heartbeat=Handler.heartbeat,
-        is_wsl=args.wsl,
+        no_local_desktop=args.wsl or args.no_local_desktop,
         # Engine-status route reads this so the polling tab can pick
         # up `acestream://` hand-offs (POST /api/play-request) from
         # a second wrapper invocation. Pure peek — the claim path

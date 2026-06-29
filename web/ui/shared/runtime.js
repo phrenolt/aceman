@@ -2,15 +2,16 @@
 // /api/storage-mode and then read across the app. Business-agnostic:
 // they describe the storage backend and the host environment, not any
 // feature. Single-writer — only the bootstrap calls the setters; every
-// other module imports the live `mode` / `isWslMode` bindings read-only.
+// other module imports the live `mode` / `noLocalDesktop` bindings read-only.
 
 // 'sqlite' | 'browser' — which favourites/history store the server has.
 export let mode = 'browser';
 export function setMode(value) { mode = value; }
 
-// WSL mode: the page is served from a Linux WSL distro to a Windows
-// browser via the WSL guest IP. When true, Linux-desktop-only UI (the
-// App-launcher card + acestream:// scheme handler) is hidden — none of
-// it can take effect from a Windows browser session.
-export let isWslMode = false;
-export function setWslMode(value) { isWslMode = value; }
+// No-local-desktop mode: this server has no Linux desktop the user can
+// use, because the page is served to a browser on another host — a WSL
+// or Lima guest, or a remote server. When true, Linux-desktop-only UI
+// (the App-launcher card + acestream:// scheme handler) is hidden — none
+// of it can act on a desktop the user isn't at.
+export let noLocalDesktop = false;
+export function setNoLocalDesktop(value) { noLocalDesktop = value; }

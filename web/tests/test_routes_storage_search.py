@@ -59,6 +59,25 @@ class StorageModeTests(unittest.TestCase):
                 _req("GET", "/api/storage-mode"), ctx).body)
         self.assertEqual(body["search_sources"], [SearchProxy.BASE])
 
+    def test_no_local_desktop_defaults_false(self):
+        # Plain local-desktop launch: the App-launcher / scheme-handler
+        # affordances stay visible.
+        ctx = RouteContext(engine="http://e", store=None, search_proxy=None)
+        body = json.loads(
+            storage_routes.get_storage_mode(
+                _req("GET", "/api/storage-mode"), ctx).body)
+        self.assertFalse(body["no_local_desktop"])
+
+    def test_no_local_desktop_surfaced_when_set(self):
+        # WSL / Lima / remote launch — the frontend reads this to hide
+        # Linux-desktop-only affordances.
+        ctx = RouteContext(engine="http://e", store=None, search_proxy=None,
+                           no_local_desktop=True)
+        body = json.loads(
+            storage_routes.get_storage_mode(
+                _req("GET", "/api/storage-mode"), ctx).body)
+        self.assertTrue(body["no_local_desktop"])
+
 
 class SearchRouteTests(unittest.TestCase):
     def test_disabled_returns_404(self):
