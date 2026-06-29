@@ -5,7 +5,7 @@
 import { $, showError, showBusy, hideBusy } from './shared/dom.js';
 import { api } from './shared/api.js';
 import { mountAcemanSelect } from './shared/dropdown.js';
-import { mode, isWslMode, setMode, setWslMode } from './shared/runtime.js';
+import { mode, noLocalDesktop, setMode, setNoLocalDesktop } from './shared/runtime.js';
 import { KEYS } from './lib/storage_keys.js';
 import { initWordmark } from './domains/wordmark/index.js';
 import { initDiagnostics } from './domains/diagnostics/index.js';
@@ -26,9 +26,9 @@ import { parseId, loadPlayers, loadBrowsers, detectCurrentBrowser, detectedPlaye
          detectedBrowsers, _currentBrowserName, loadLastPlay, extractPlayCidFromUrl,
          resolveDisplayName, current, livePlaybackTarget, cfg, play, initPlaybackControls,
          renderPlaybackTargets, restartStream, refreshEngineStatus, engineState,
-         clearNowPlaying, setTabTitle, setNowPlayingName, persistPlaybackTarget,
+         clearNowPlaying, setTabTitle, setNowPlayingName,
          waitForEngineReady, waitForBackend, refreshPlayerRowAlignment,
-         movePlaybackToSelection, toggleEngine, saveAutostart,
+         movePlaybackToSelection, toggleEngine, toggleLanExpose, onPlaybackTargetChange, refreshDeviceStream, copyPlayingCid, toggleDeviceLink, saveAutostart,
          alignSearchToInput, setCfg, setCurrent } from './domains/playback/index.js';
 
 // ---- init --------------------------------------------------------------
@@ -63,24 +63,21 @@ import { parseId, loadPlayers, loadBrowsers, detectCurrentBrowser, detectedPlaye
     const badge = describeFavouritesStorageBadge(mode, cfg.favorites_path);
     $('storage-badge').textContent = badge.text;
     $('storage-badge').title = badge.title;
-    // Hide Linux-desktop-only affordances when served to a Windows-side browser.
-    setWslMode(!!cfg.is_wsl);
-    if (isWslMode) {
-      // App launcher row: no xdg-mime or .desktop on Windows.
+    // Hide Linux-desktop-only affordances when the browser is on another host.
+    setNoLocalDesktop(!!cfg.no_local_desktop);
+    if (noLocalDesktop) {
+      // App launcher row: no Linux desktop to write a .desktop file to.
       const desktopRow = $('desktop-row');
       if (desktopRow) desktopRow.style.display = 'none';
-      // Player/browser selector: Linux-side targets are unreachable from
-      // the Windows browser. Hide selection, keep the buffer slider
-      // (WSL always plays in-browser).
-      const playerSelectRow = $('player-select-row');
-      if (playerSelectRow) playerSelectRow.style.display = 'none';
+      // Host-side players/browsers are unreachable from a browser on
+      // another host, so renderPlaybackTargets trims the "Play in" list to
+      // just "This tab" + "Another device" — keep the selector visible for
+      // that choice, but drop the dedup toggle + no-target hint, which
+      // don't apply.
       const showAllRow = $('show-all-row');
       if (showAllRow) showAllRow.style.display = 'none';
       const playerHint = $('player-hint');
       if (playerHint) playerHint.style.display = 'none';
-      // Rename card label to reflect the remaining content.
-      const playerLabel = document.querySelector('#player-card .card-label');
-      if (playerLabel) playerLabel.textContent = 'Playback';
     }
   } catch (e) {
     showError('Could not contact backend: ' + e.message);
@@ -155,6 +152,7 @@ import { parseId, loadPlayers, loadBrowsers, detectCurrentBrowser, detectedPlaye
     refreshSearchSection();
     refreshClearButton();
     onSearchInput();
+    refreshDeviceStream();   // keep the device QR in sync while typing
   });
   $('cid-input').addEventListener('dblclick', e => {
     if ($('cid-input').value !== '') return; // non-empty → standard text-select
@@ -162,11 +160,17 @@ import { parseId, loadPlayers, loadBrowsers, detectCurrentBrowser, detectedPlaye
     if (historyDropdownOpen()) { closeHistoryDropdown(); return; }
     openHistoryDropdown();
   });
-  $('cid-clear').onclick = clearCidInput;
+  $('cid-clear').onclick = () => { clearCidInput(); refreshDeviceStream(); };
+  // Click the playing title or the now-playing id chip → copy the Ace ID
+  // and put it back in the Watch box. (No-op while idle.)
+  $('playback-title').onclick = copyPlayingCid;
+  $('now-playing-id').onclick = copyPlayingCid;
   $('save-btn').onclick = saveFav;
   $('engine-toggle').onclick = toggleEngine;
   $('autostart').onchange = saveAutostart;
-  $('playback-target').onchange = () => persistPlaybackTarget($('playback-target').value);
+  $('lan-expose').onchange = toggleLanExpose;
+  $('device-stream-qr').onclick = toggleDeviceLink;
+  $('playback-target').onchange = onPlaybackTargetChange;
   $('playback-move').onclick = () => movePlaybackToSelection();
   // "Show all browser installs" — UI-only preference in localStorage.
   const showAllCb = $('show-all-browsers');
