@@ -11,10 +11,12 @@
 #
 # Knobs (env vars, all optional):
 #   ACE_GW_NAME      container name            (default ace-gw)
-#   ACE_GW_HOST      host bind for the port    (default 127.0.0.1; set to
-#                                                0.0.0.0 for LAN exposure —
-#                                                the gateway still blocks
-#                                                browsers even on the LAN)
+#   ACE_GW_HOST      host bind for the port    (default 127.0.0.1, EXCEPT
+#                                                under WSL where it defaults
+#                                                to 0.0.0.0 so the guest IP
+#                                                answers; set 0.0.0.0 for LAN
+#                                                exposure — the gateway still
+#                                                blocks browsers on the LAN)
 #   ACE_GW_PORT      host+container port        (default 6878)
 #   ACE_NAME         upstream engine container  (default ace)
 #   ACE_WEB_IMAGE    image to run               (default localhost/aceman-web:vetted)
@@ -34,7 +36,20 @@ GW_NAME="${ACE_GW_NAME:-ace-gw}"
 GW_PORT="${ACE_GW_PORT:-6878}"
 UPSTREAM_NAME="${ACE_NAME:-ace}"
 WEB_IMAGE="${ACE_WEB_IMAGE:-localhost/aceman-web:vetted}"
-GW_HOST="${ACE_GW_HOST:-127.0.0.1}"
+
+# Host bind default: loopback everywhere except WSL. The WSL branch exists
+# to keep wsl/get_url_stream.bat working: that script runs `aceman <id>` in
+# the guest and hands the stream URL — rewritten to the WSL guest IP — to
+# Windows VLC/mpv. Windows can only reach that guest IP if the gateway (the
+# sole host door to the engine) binds it, because 127.0.0.1 inside WSL2
+# isn't routable from Windows. Same rule/override as run-container.sh:
+# ACE_GW_HOST=127.0.0.1 forces loopback, ACE_DISABLE_WSL=1 treats WSL as
+# plain Linux. The Sec-Fetch-Site gate still blocks browsers either way.
+if is_wsl && [ "${ACE_DISABLE_WSL:-0}" != 1 ]; then
+    GW_HOST="${ACE_GW_HOST:-0.0.0.0}"
+else
+    GW_HOST="${ACE_GW_HOST:-127.0.0.1}"
+fi
 
 # The gateway reuses the web image. In container mode the wrapper already
 # built it; in --native mode it may be absent, so build it on demand
