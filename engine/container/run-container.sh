@@ -111,6 +111,17 @@ if [ -n "${ACE_P2P_PORT:-}" ]; then
     )
 fi
 
+# HTTP API port publish. DEFAULT (gateway mode): NOT published — the
+# engine's API stays on the shared bridge only, reachable by the web
+# container and by the engine gateway (run-gateway.sh), never directly
+# from the host (so no website in your browser can reach it; see the
+# README security note). Opt out with ACE_ENGINE_GATEWAY=0 to publish the
+# API straight to the host like older versions did.
+API_PORT_FLAGS=()
+if [ "${ACE_ENGINE_GATEWAY:-1}" = "0" ]; then
+    API_PORT_FLAGS=(-p "${API_HOST}:${API_PORT}:6878")
+fi
+
 # Convert a podman-style size ("3g" / "512m" / "1024k" / bare bytes) to
 # bytes for the engine's --disk-cache-limit. The engine wants raw bytes.
 validate_size_spec "$CACHE_SIZE" "ACE_CACHE_SIZE"
@@ -164,7 +175,7 @@ fi
 exec podman run --rm "${detach_flag[@]}" \
     --name "$NAME" \
     --network "$ACE_NETWORK" \
-    -p "${API_HOST}:${API_PORT}:6878" \
+    "${API_PORT_FLAGS[@]}" \
     "${P2P_PORT_FLAGS[@]}" \
     --cap-drop=ALL \
     --security-opt no-new-privileges \

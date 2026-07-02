@@ -46,6 +46,12 @@ PROJECT_ROOT = pathlib.Path(
     or pathlib.Path(__file__).resolve().parent.parent.parent
 )
 RUN_SH = PROJECT_ROOT / "engine" / "container" / "run-container.sh"
+# Engine gateway: a transparent splice that fronts the engine and refuses
+# browser requests. ON by default; opt out with ACE_ENGINE_GATEWAY=0 to
+# publish the engine's API straight to the host like older versions.
+ENGINE_GATEWAY = os.environ.get("ACE_ENGINE_GATEWAY", "1") != "0"
+GATEWAY_NAME = os.environ.get("ACE_GW_NAME", "ace-gw")
+RUN_GW_SH = PROJECT_ROOT / "engine" / "container" / "run-gateway.sh"
 # Helper used by restart actions to run the same ensure_*_image
 # check the launcher wrapper runs at startup — so a Restart from
 # the web UI picks up source changes the same way a relaunch does.
@@ -96,9 +102,12 @@ def validate_at_startup() -> None:
     try:
         validate_container_name(NAME)
         validate_container_name(WEB_NAME)
+        validate_container_name(GATEWAY_NAME)
         validate_image_tag(IMAGE)
         validate_engine_url(ENGINE_URL)
     except ValueError as e:
         sys.exit(f"aceman-broker: {e}")
     if not RUN_SH.is_file():
         sys.exit(f"aceman-broker: launcher not found at {RUN_SH}")
+    if ENGINE_GATEWAY and not RUN_GW_SH.is_file():
+        sys.exit(f"aceman-broker: gateway launcher not found at {RUN_GW_SH}")

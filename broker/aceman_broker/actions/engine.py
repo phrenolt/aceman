@@ -16,14 +16,18 @@ import time
 from urllib.parse import urlsplit
 
 from ..config import (
+    ENGINE_GATEWAY,
     ENGINE_URL,
     ENSURE_IMAGE_HELPER,
+    GATEWAY_NAME,
     IMAGE,
     LAUNCHER_TIMEOUT,
     NAME,
+    RUN_GW_SH,
     RUN_SH,
     START_WAIT_SECONDS,
     STOP_TIMEOUT,
+    WEB_IMAGE,
 )
 from ..engine_ops import (
     container_running,
@@ -83,6 +87,55 @@ def _lan_info() -> dict:
         "lan_ip": _detect_lan_ip(),
         "lan_port": _lan_port(),
     }
+
+
+# ── Engine gateway ────────────────────────────────────────────────────
+# In the default (gateway) mode the engine container has NO host port:
+# the gateway container (run-gateway.sh) publishes the host API port,
+# forwards to the engine over the bridge, and refuses browser requests.
+# The gateway's publish host follows _lan_exposed (loopback vs 0.0.0.0),
+# so the LAN toggle re-spawns only the lightweight gateway — the engine
+# (and any active stream) stays up.
+
+def _gateway_publish_host() -> str:
+    return "0.0.0.0" if _lan_exposed else "127.0.0.1"
+
+
+def _start_gateway_unlocked() -> None:
+    """(Re)launch the engine gateway container. Raises on launcher failure
+    — a missing gateway means the host can't reach the engine at all, so
+    that's a hard error, not a silent degrade."""
+    _log("engine", "gateway: spawning '%s' (publish %s)",
+         GATEWAY_NAME, _gateway_publish_host())
+    env = os.environ.copy()
+    env["ACE_DETACH"] = "1"
+    env["ACE_GW_NAME"] = GATEWAY_NAME
+    env["ACE_NAME"] = NAME
+    env["ACE_WEB_IMAGE"] = WEB_IMAGE
+    env["ACE_GW_HOST"] = _gateway_publish_host()
+    try:
+        r = subprocess.run(
+            ["bash", str(RUN_GW_SH)],
+            env=env, capture_output=True, text=True,
+            timeout=LAUNCHER_TIMEOUT,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired) as e:
+        raise RuntimeError(f"gateway launcher failed: {e}") from e
+    if r.returncode != 0:
+        msg = _safe((r.stderr or r.stdout or "").strip())
+        raise RuntimeError(
+            f"gateway launcher exited {r.returncode}: {msg or '<no output>'}")
+
+
+def _stop_gateway() -> None:
+    """Best-effort removal of the gateway container."""
+    try:
+        subprocess.run(
+            ["podman", "rm", "-f", GATEWAY_NAME],
+            capture_output=True, timeout=STOP_TIMEOUT,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        pass
 
 
 import re as _re
@@ -172,11 +225,11 @@ def _start_engine_unlocked() -> dict:
     env["ACE_DETACH"] = "1"
     env["ACE_NAME"] = NAME
     env["ACE_IMAGE"] = IMAGE
-    if _lan_exposed:
-        # Operator opted in this session: bind the engine's host API
-        # port on all interfaces so a player on another LAN device
-        # (phone/tablet VLC) can reach /ace/getstream. Without this the
-        # bind stays loopback-only. See action_engine_set_lan.
+    env["ACE_ENGINE_GATEWAY"] = "1" if ENGINE_GATEWAY else "0"
+    if not ENGINE_GATEWAY and _lan_exposed:
+        # Opt-out (no gateway): the engine publishes its own host port, so
+        # bind it on all interfaces for LAN players. In gateway mode the
+        # engine never publishes — the gateway's publish host handles LAN.
         env["ACE_API_HOST"] = "0.0.0.0"
     try:
         r = subprocess.run(
@@ -192,6 +245,11 @@ def _start_engine_unlocked() -> dict:
         msg = _safe((r.stderr or r.stdout or "").strip())
         raise RuntimeError(
             f"launcher exited {r.returncode}: {msg or '<no output>'}")
+    # Gateway mode: the engine has no host port, so bring up the gateway
+    # (it publishes the host port and forwards over the bridge) BEFORE we
+    # probe — the probe reaches the engine *through* the gateway.
+    if ENGINE_GATEWAY:
+        _start_gateway_unlocked()
     deadline = time.monotonic() + START_WAIT_SECONDS
     while time.monotonic() < deadline:
         if engine_probe(timeout=2):
@@ -210,6 +268,10 @@ def action_engine_start(params: "dict | None" = None) -> dict:
 def _stop_engine_unlocked() -> dict:
     """The body of action_engine_stop without the _engine_lock acquire,
     so set_lan can stop-then-respawn while already holding the lock."""
+    # Drop the gateway first (best-effort, even if the engine isn't
+    # running) so no new host request reaches a dying engine.
+    if ENGINE_GATEWAY:
+        _stop_gateway()
     if not container_running():
         return {"stopped": False, "reason": "not running"}
     _log("engine", "stop: '%s'", NAME)
@@ -231,14 +293,15 @@ def action_engine_stop(params: "dict | None" = None) -> dict:
 def action_engine_set_lan(params: "dict | None" = None) -> dict:
     """Toggle LAN exposure of the engine's HTTP API for this session.
 
-    Enabled → the engine (re)launches with its host port bound to
-    0.0.0.0 so a player on another device (e.g. VLC on a phone/tablet)
-    can reach /ace/getstream. Disabled → back to loopback-only.
+    Enabled → the host port binds 0.0.0.0 so a player on another device
+    (e.g. VLC on a phone/tablet) can reach it. Disabled → loopback-only.
 
-    Flipping the flag re-spawns a running engine so the new bind takes
-    effect: the port binding is fixed at `podman run` time, so a plain
-    `podman restart` (or CreateCommand replay) would keep the old bind —
-    we stop and run the launcher fresh instead.
+    Gateway mode (default): only the lightweight gateway re-spawns with
+    the new publish host — the engine and any active stream stay up. The
+    gateway still refuses browser requests even when exposed on the LAN.
+
+    Opt-out mode: the engine itself owns the host port, so it must be
+    stopped and relaunched (the publish is fixed at `podman run` time).
 
     Not persisted: a fresh broker always starts loopback-only."""
     enabled = validate_bool((params or {}).get("enabled"), "enabled")
@@ -248,10 +311,14 @@ def action_engine_set_lan(params: "dict | None" = None) -> dict:
         _lan_exposed = enabled
         relaunched = False
         if changed and container_running():
-            _log("engine", "set_lan: %s → re-spawning '%s'",
-                 "expose" if enabled else "loopback", NAME)
-            _stop_engine_unlocked()
-            _start_engine_unlocked()
+            _log("engine", "set_lan: %s → re-spawning %s",
+                 "expose" if enabled else "loopback",
+                 "gateway" if ENGINE_GATEWAY else "engine")
+            if ENGINE_GATEWAY:
+                _start_gateway_unlocked()      # engine stays up
+            else:
+                _stop_engine_unlocked()
+                _start_engine_unlocked()
             relaunched = True
         return {"relaunched": relaunched, **_lan_info()}
 
@@ -308,6 +375,11 @@ def action_engine_restart(params: "dict | None" = None) -> dict:
                 raise RuntimeError(
                     f"podman restart exited {r.returncode}: "
                     f"{msg or '<no output>'}")
+        # Gateway mode: re-spawn the gateway against the (re)started engine
+        # before probing — the probe reaches the engine through it, and a
+        # fresh gateway also picks up any web-image rebuild.
+        if ENGINE_GATEWAY:
+            _start_gateway_unlocked()
         deadline = time.monotonic() + START_WAIT_SECONDS
         while time.monotonic() < deadline:
             if engine_probe(timeout=2):

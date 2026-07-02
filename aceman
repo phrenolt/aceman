@@ -379,6 +379,8 @@ engine_up() {
 # ACE_MEMORY / ACE_CACHE_SIZE / ACE_API_PORT in env get forwarded by the
 # launcher.
 RUN_SH="$SCRIPT_DIR/engine/container/run-container.sh"
+RUN_GW_SH="$SCRIPT_DIR/engine/container/run-gateway.sh"
+GW_NAME="${ACE_GW_NAME:-ace-gw}"
 PROG="aceman"
 ACELIB_PROJECT_ROOT="$SCRIPT_DIR"
 
@@ -394,6 +396,14 @@ start_engine_now() {
     ensure_engine_image
     ACE_DETACH=1 ACE_NAME="$ACE_NAME" "$RUN_SH" >/dev/null \
         || die "failed to start engine via $RUN_SH"
+    # Gateway mode (default): the engine has NO host port — the gateway
+    # publishes $ENGINE (6878) and forwards to the engine over the bridge,
+    # blocking browser requests. Without it the engine_up poll below (which
+    # hits 6878) would never answer. Opt out with ACE_ENGINE_GATEWAY=0.
+    if [ "${ACE_ENGINE_GATEWAY:-1}" != "0" ]; then
+        ACE_DETACH=1 ACE_GW_NAME="$GW_NAME" ACE_NAME="$ACE_NAME" "$RUN_GW_SH" \
+            >/dev/null || die "failed to start engine gateway via $RUN_GW_SH"
+    fi
     for _ in $(seq 1 30); do
         engine_up && return 0
         sleep 1
@@ -452,6 +462,7 @@ engine_cmd_stop() {
     fi
     echo "aceman: stopping engine container '$ACE_NAME'..."
     podman stop -t 5 "$ACE_NAME" >/dev/null || die "podman stop failed"
+    podman rm -f "$GW_NAME" >/dev/null 2>&1 || true   # tear down the gateway too
     echo "aceman: engine stopped"
 }
 

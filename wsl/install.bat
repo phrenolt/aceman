@@ -82,6 +82,19 @@ wsl -d Ubuntu -u root -- bash -c "tr -d '\r' < '%SH%' | bash"
 echo Creating Desktop shortcut...
 call "%~dp0internal\shortcut.bat" silent
 
+:: Optional: let a phone/tablet on your LAN play streams. This switches WSL
+:: to "mirrored" networking (enable_shared_networking.bat does the work).
+:: Off unless the user opts in - the wsl --shutdown below applies it.
+echo.
+echo Optional: let ANOTHER device (phone/tablet with VLC) play streams
+echo over your LAN. This switches WSL to "mirrored" networking. The
+echo engine has no password (aceman still blocks browser drive-by
+echo requests), so only enable it on a network you trust. You can also
+echo do this later by running enable_shared_networking.bat.
+echo.
+choice /c YN /m "Enable shared networking for another-device playback"
+if not errorlevel 2 call "%~dp0enable_shared_networking.bat" silent
+
 :: setup.sh wrote /etc/wsl.conf (systemd=true + default user). Those only
 :: apply on a fresh boot of the distro, so shut it down now - the next
 :: launch (run.bat) starts with systemd and logs in as the 'ace' user.
