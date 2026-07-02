@@ -8,7 +8,12 @@
 set -euo pipefail
 
 DL="$HOME/Downloads"
-limactl shell aceman -- bash -lc "cd ~/Projects/aceman && ACE_DOWNLOADS='$DL' ./backup_to_downloads.sh"
+# Guard the clone + script: the Mac kit and the in-guest git clone update
+# separately, so a fresh .command can meet an old clone that predates this
+# script. Run via `bash <script>` (no dependence on the clone's exec bit), and
+# skip cleanly with exit 0 rather than a confusing "No such file" error — this
+# is called mid-teardown by uninstall.command.
+limactl shell aceman -- bash -lc "cd ~/Projects/aceman 2>/dev/null || { echo 'aceman: ~/Projects/aceman not found - skipping backup.'; exit 0; }; if [ -f backup_to_downloads.sh ]; then ACE_DOWNLOADS='$DL' bash backup_to_downloads.sh; else echo 'aceman: backup_to_downloads.sh is missing from your guest clone (it predates this feature). Run update.command to refresh the clone, then retry. Skipping backup.'; fi"
 
 # Any arg (uninstall.command passes "nopause") skips the prompt so the caller
 # keeps control; a plain double-click waits so the result stays on screen.

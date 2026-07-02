@@ -8,6 +8,8 @@
 set -euo pipefail
 
 DL="$HOME/Downloads"
-limactl shell aceman -- bash -lc "cd ~/Projects/aceman && ACE_DOWNLOADS='$DL' ./import_engine.sh"
+# Guard the clone + script (the Mac kit and in-guest clone update separately)
+# and run via `bash <script>` so we don't depend on the clone's exec bit.
+limactl shell aceman -- bash -lc "cd ~/Projects/aceman 2>/dev/null || { echo 'aceman: ~/Projects/aceman not found - is the guest provisioned? Run install.command first.'; exit 0; }; if [ -f import_engine.sh ]; then ACE_DOWNLOADS='$DL' bash import_engine.sh; else echo 'aceman: import_engine.sh is missing from your guest clone (it predates this feature). Run update.command to refresh the clone, then retry.'; fi"
 echo
 read -r -p "Press Enter to close." _
