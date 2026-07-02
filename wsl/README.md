@@ -186,12 +186,17 @@ kit, re-run `register-handler.bat`.
 Runs `git pull` inside `~/Projects/aceman`. Read the trust note it prints
 first.
 
-## Back up favourites — `backup_to_downloads.bat`
+## Back up / restore favourites — `backup_to_downloads.bat` / `restore_from_downloads.bat`
 
-Saves your aceman favourites (and prefs) from inside WSL into your Windows
-**Downloads** folder, as a timestamped `aceman-backup-…` folder. Run it any
-time; `uninstall.bat` also **offers** it before deleting anything. To
-restore, copy the files back into `~/.config/aceman/` in WSL.
+**`backup_to_downloads.bat`** saves your aceman favourites (and prefs) from
+inside WSL into your Windows **Downloads** folder, as a timestamped
+`aceman-backup-…` folder. Run it any time; `uninstall.bat` also **offers**
+it before deleting anything.
+
+**`restore_from_downloads.bat`** is the reverse — it copies a backup folder
+back into `~/.config/aceman/` in WSL. With no argument it restores the
+newest `aceman-backup-…` in Downloads. Stop aceman (close the web UI) before
+restoring, then relaunch to see the favourites.
 
 ## Uninstall — `uninstall.bat`
 
@@ -212,6 +217,7 @@ The ones you actually run:
 | `enable_shared_networking.bat`  | Switch WSL to mirrored networking (play on another device) |
 | `disable_shared_networking.bat` | Revert WSL to default (NAT) networking          |
 | `backup_to_downloads.bat` | Save favourites to your Windows Downloads              |
+| `restore_from_downloads.bat` | Restore favourites from a Downloads backup         |
 | `stop.bat`           | Stop aceman containers and shut down WSL                     |
 | `update.bat`         | `git pull` the project inside WSL                           |
 | `uninstall.bat`      | Remove the distro + WSL (offers a favourites backup first)  |
