@@ -18,6 +18,7 @@ import aceman_web
 
 def _make_handler_stub(host_header: str = "127.0.0.1:8770",
                        content_type: str = "application/json",
+                       sec_fetch_site: "str | None" = None,
                        allowed=None) -> aceman_web.Handler:
     """Build a Handler instance without going through __init__ (which
     expects a live request socket). We only use the per-instance bits
@@ -29,8 +30,10 @@ def _make_handler_stub(host_header: str = "127.0.0.1:8770",
     class _Hdr(dict):
         def get(self, k, default=None):
             return dict.get(self, k, default)
-    inst.headers = _Hdr({"Host": host_header,
-                         "Content-Type": content_type})
+    hdrs = {"Host": host_header, "Content-Type": content_type}
+    if sec_fetch_site is not None:
+        hdrs["Sec-Fetch-Site"] = sec_fetch_site
+    inst.headers = _Hdr(hdrs)
     return inst
 
 
@@ -98,6 +101,35 @@ class HostHeaderGateTests(unittest.TestCase):
         aceman_web.Handler.allowed_hosts = None
         h = _make_handler_stub(host_header="anything-goes")
         self.assertTrue(h._host_allowed())
+
+
+class CrossSiteGateTests(unittest.TestCase):
+    """``_cross_site`` blocks a cross-site browser request. Browsers send
+    Sec-Fetch-Site and JS can't forge it; native clients send nothing."""
+
+    def test_cross_site_blocked(self):
+        h = _make_handler_stub(sec_fetch_site="cross-site")
+        self.assertTrue(h._cross_site())
+
+    def test_same_site_blocked(self):
+        h = _make_handler_stub(sec_fetch_site="same-site")
+        self.assertTrue(h._cross_site())
+
+    def test_same_origin_allowed(self):
+        # Our own UI calling its own /api/*.
+        h = _make_handler_stub(sec_fetch_site="same-origin")
+        self.assertFalse(h._cross_site())
+
+    def test_none_allowed(self):
+        # Top-level navigation / typed URL — e.g. opening the UI on another
+        # device's browser.
+        h = _make_handler_stub(sec_fetch_site="none")
+        self.assertFalse(h._cross_site())
+
+    def test_absent_header_allowed(self):
+        # Native clients (curl, VLC, the aceman CLI) send no Sec-Fetch.
+        h = _make_handler_stub(sec_fetch_site=None)
+        self.assertFalse(h._cross_site())
 
 
 class ContentTypeGateTests(unittest.TestCase):

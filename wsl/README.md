@@ -36,6 +36,9 @@ Double-click **`install.bat`** and approve the UAC prompts. It:
    `ace`, installs `podman git jq`, enables systemd (so `podman stats`
    reports memory), and clones the repo to `~/Projects/aceman`.
 3. Creates an **aceman** shortcut on your Desktop.
+4. Asks whether to enable **shared networking** so another device
+   (phone/tablet) can play streams over your LAN — see below. Answer
+   **N** if unsure; you can turn it on later.
 
 ## 2. Provide the engine tarball (one-time, required to play)
 
@@ -102,6 +105,49 @@ installed. This sidesteps the broken GPU/VA-API situation under WSL — it's
 the main reason to prefer this path over browser playback for heavy
 streams.
 
+## Play on another device — phone/tablet (optional)
+
+Want to play a stream on your phone or tablet (VLC) instead of this PC?
+By default WSL is NAT'd behind Windows, so other devices on your LAN
+can't reach the engine. **`enable_shared_networking.bat`** switches WSL
+to **mirrored networking**, which makes the WSL guest share your
+Windows network interfaces — so the engine becomes reachable on your
+real LAN IP.
+
+```
+enable_shared_networking.bat
+```
+
+It does two things, then restarts WSL so they take effect:
+
+1. Writes `networkingMode=mirrored` to `%UserProfile%\.wslconfig` (per-user,
+   a one-time backup is saved as `.wslconfig.aceman-backup`).
+2. Opens **TCP port 6878** (the engine) inbound in Windows firewall. This
+   step needs admin, so it pops **one UAC prompt** — approve it. Without
+   the firewall rule, mirrored networking alone still leaves the phone
+   timing out.
+
+Then in the web UI, tick **"Expose engine on local network"** and scan the
+QR from your device — it now shows your real LAN IP. Only 6878 is opened;
+the web UI port (8770) is left closed, since the phone plays via VLC and
+never needs it.
+
+> **Requires Windows 11 22H2 (build 22621) or newer** — mirrored
+> networking is ignored on older builds. The script warns you if so.
+
+> **Security:** with this on, the engine is reachable by **any device
+> on your LAN** once you tick "Expose engine on local network". aceman
+> still blocks web-browser drive-by requests, but the engine has **no
+> password** — only enable this on a network you trust, never on public
+> or shared Wi-Fi.
+
+To turn it back off, run **`disable_shared_networking.bat`** — it removes
+the `networkingMode` line, closes port 6878 (one UAC prompt), and restarts
+WSL, putting you back on default (NAT) networking.
+
+`install.bat` offers the enable step as a prompt during setup; running
+the scripts yourself later does exactly the same thing.
+
 ## `acestream://` click-to-play (optional)
 
 Want `acestream://` links to *just play* when clicked — including the
@@ -145,6 +191,8 @@ The ones you actually run:
 | `install.bat`        | Install WSL + Ubuntu, provision, create the Desktop shortcut |
 | `run.bat`            | Launch aceman_web and auto-open the browser                 |
 | `get_url_stream.bat` | Resolve an Ace Stream id to a URL for Windows VLC/mpv        |
+| `enable_shared_networking.bat`  | Switch WSL to mirrored networking (play on another device) |
+| `disable_shared_networking.bat` | Revert WSL to default (NAT) networking          |
 | `stop.bat`           | Stop aceman containers and shut down WSL                     |
 | `update.bat`         | `git pull` the project inside WSL                           |
 | `uninstall.bat`      | Remove the distro + WSL                                     |
