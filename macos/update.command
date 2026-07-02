@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 # Update aceman — counterpart to wsl/update.bat.
 # Force-updates the guest clone: fetches GitHub and hard-resets to the latest
-# code via update.sh (so a dirty or diverged tree can't dead-end the update).
-# Takes an optional branch argument, forwarded to update.sh.
+# code. Takes an optional branch argument (default: current branch, else main).
 set -euo pipefail
 
 BRANCH="${1:-}"
@@ -33,7 +32,12 @@ esac
 
 echo
 echo "Updating..."
-if limactl shell aceman -- bash -lc "cd ~/Projects/aceman && ./update.sh $(printf '%q' "$BRANCH")"; then
+# Force-pull inline via git, NOT by calling ./update.sh — update is the tool you
+# run to escape a stale clone, so it must not depend on any file being in that
+# clone (a clone old enough to lack update.sh is exactly when you need this).
+# Mirrors update.sh: fetch, then hard-reset the branch to origin. $BRANCH is
+# expanded Mac-side into the string; \$B / \$(...) stay literal for the guest.
+if limactl shell aceman -- bash -lc "cd ~/Projects/aceman 2>/dev/null || { echo 'aceman: ~/Projects/aceman not found - run install.command first.'; exit 1; }; B='$BRANCH'; B=\${B:-\$(git rev-parse --abbrev-ref HEAD 2>/dev/null)}; case \$B in HEAD|'') B=main ;; esac; echo updating to origin/\$B ...; git fetch origin \$B && git reset --hard && git checkout -B \$B origin/\$B"; then
     echo "Update complete. Launch with run.command."
 else
     echo "Update did not complete cleanly. Check your internet connection, or"
