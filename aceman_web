@@ -617,16 +617,11 @@ unset _arg _expect
 
 # WSL mode bookkeeping. We treat WSL as "browser is on the Windows
 # side" — so --open-browser never makes sense (no Linux browser to
-# launch), and --host gets forced to 0.0.0.0 so the WSL guest IP route
-# actually answers. The --wsl flag is also forwarded to python so the
+# launch), and --host gets forced to 0.0.0.0 so the Windows localhost
+# forward answers. The --wsl flag is also forwarded to python so the
 # UI hides Linux-desktop-only affordances (App-launcher row, etc.).
-# is_wsl was already true when we set WEB_USE_WSL=1 above; no need to
-# re-check. We still need the guest IP for the printout, though.
+# is_wsl was already true when we set WEB_USE_WSL=1 above; no re-check.
 if [ "$WEB_USE_WSL" = 1 ]; then
-    if ! _wsl_ip="$(wsl_guest_ip)"; then
-        echo "aceman_web: could not resolve WSL guest IP (hostname -I empty)" >&2
-        exit 1
-    fi
     _open_browser=0
     if [ "$_have_host" = 0 ]; then
         export ACE_WEB_HOST=0.0.0.0
@@ -663,7 +658,11 @@ fi
 # 0.0.0.0 into a browser. Translate to something reachable.
 if [ "$_eff_host" = "0.0.0.0" ]; then
     if [ "$WEB_USE_WSL" = 1 ]; then
-        _eff_host="$_wsl_ip"
+        # The Windows browser reaches the web UI over localhost (WSL
+        # forwards it). Don't advertise the guest/LAN IP: only the engine
+        # port is opened to the LAN, not the web UI on 8770 — that URL
+        # would just time out.
+        _eff_host="localhost"
     else
         _eff_host="127.0.0.1"
     fi
@@ -717,7 +716,7 @@ if [ "$_open_browser" = 1 ] && [ "$WEB_USE_CONTAINER" = 1 ]; then
     fi
 fi
 
-unset _have_host _open_browser _eff_port _eff_host _url _wsl_ip
+unset _have_host _open_browser _eff_port _eff_host _url
 
 # About to hand off to the server (container or native python). Mark
 # the bootstrap complete so the EXIT trap above stops claiming we
