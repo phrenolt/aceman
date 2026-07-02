@@ -1,23 +1,17 @@
 @echo off
 setlocal EnableExtensions
 
-:: disable_shared_networking.bat - revert WSL2 to its default (NAT)
-:: networking by removing the mirrored-mode setting aceman added, then
-:: restarting WSL. Per-user, no admin. Undoes enable_shared_networking.bat.
+:: disable_shared_networking.bat - undo enable_shared_networking.bat: revert
+:: WSL2 to default (NAT) networking and remove the engine firewall rule, then
+:: restart WSL. Config edit is per-user; the firewall removal self-elevates.
 
+set "FWRULE=aceman-engine-6878"
 set "CFG=%UserProfile%\.wslconfig"
 
-if not exist "%CFG%" (
-    echo No %CFG% found - shared networking was never enabled here.
-    echo Nothing to do.
-    pause
-    exit /b 0
-)
-
 echo.
-echo   This reverts WSL to its default ^(NAT^) networking by removing the
-echo   networkingMode line from %CFG%, then restarts WSL. Other devices on
-echo   your LAN will no longer be able to reach the aceman engine.
+echo   This reverts WSL to default ^(NAT^) networking and closes Windows
+echo   firewall port 6878. Other devices on your LAN will no longer reach
+echo   the aceman engine.
 echo.
 choice /c YN /m "Disable shared networking now"
 if errorlevel 2 (
@@ -25,20 +19,15 @@ if errorlevel 2 (
     exit /b 1
 )
 
-:: Remove any networkingMode line; leave the rest of the file untouched.
-powershell -NoProfile -Command ^
-  "$cfg = Join-Path $env:USERPROFILE '.wslconfig';" ^
-  "$lines = @(Get-Content -LiteralPath $cfg) | Where-Object { $_ -notmatch 'networkingMode' };" ^
-  "Set-Content -LiteralPath $cfg -Value $lines -Encoding ASCII"
-if errorlevel 1 (
-    echo.
-    echo   FAILED to update %CFG% - nothing changed there.
-    pause
-    exit /b 1
-)
+:: 1) Per-user: drop the networkingMode line (leave the rest of the file).
+powershell -NoProfile -Command "$cfg = Join-Path $env:USERPROFILE '.wslconfig'; if (Test-Path -LiteralPath $cfg) { Set-Content -LiteralPath $cfg -Value (@(Get-Content -LiteralPath $cfg) | Where-Object { $_ -notmatch 'networkingMode' }) -Encoding ASCII }"
+echo   Removed networkingMode from %CFG% ^(if present^).
 
-echo.
-echo   Removed networkingMode from %CFG%.
+:: 2) Machine-wide: remove the firewall rule (needs admin - one UAC prompt).
+echo   Approve the admin prompt to remove the firewall rule...
+powershell -NoProfile -Command "Start-Process cmd -Verb RunAs -Wait -ArgumentList '/c netsh advfirewall firewall delete rule name=%FWRULE%'"
+echo   Firewall rule %FWRULE% removed.
+
 echo   Restarting WSL so it takes effect ^(this stops any running aceman^)...
 wsl --shutdown
 echo.

@@ -118,11 +118,19 @@ real LAN IP.
 enable_shared_networking.bat
 ```
 
-It writes `networkingMode=mirrored` to `%UserProfile%\.wslconfig` (no
-admin needed; a one-time backup is saved as `.wslconfig.aceman-backup`)
-and runs `wsl --shutdown` so it takes effect on the next launch. Then in
-the web UI, tick **"Expose engine on local network"** and scan the QR
-from your device — it now shows your real LAN IP.
+It does two things, then restarts WSL so they take effect:
+
+1. Writes `networkingMode=mirrored` to `%UserProfile%\.wslconfig` (per-user,
+   a one-time backup is saved as `.wslconfig.aceman-backup`).
+2. Opens **TCP port 6878** (the engine) inbound in Windows firewall. This
+   step needs admin, so it pops **one UAC prompt** — approve it. Without
+   the firewall rule, mirrored networking alone still leaves the phone
+   timing out.
+
+Then in the web UI, tick **"Expose engine on local network"** and scan the
+QR from your device — it now shows your real LAN IP. Only 6878 is opened;
+the web UI port (8770) is left closed, since the phone plays via VLC and
+never needs it.
 
 > **Requires Windows 11 22H2 (build 22621) or newer** — mirrored
 > networking is ignored on older builds. The script warns you if so.
@@ -134,10 +142,8 @@ from your device — it now shows your real LAN IP.
 > or shared Wi-Fi.
 
 To turn it back off, run **`disable_shared_networking.bat`** — it removes
-the `networkingMode` line and restarts WSL, putting you back on default
-(NAT) networking. (Manual equivalent: delete that line from
-`%UserProfile%\.wslconfig`, or restore `.wslconfig.aceman-backup`, then
-run `wsl --shutdown`.)
+the `networkingMode` line, closes port 6878 (one UAC prompt), and restarts
+WSL, putting you back on default (NAT) networking.
 
 `install.bat` offers the enable step as a prompt during setup; running
 the scripts yourself later does exactly the same thing.
