@@ -22,7 +22,7 @@ host-side allow-list broker means the web never touches `podman` or
 anything host-related directly.
 
 <p align="center">
-  <a href="https://www.patreon.com/cw/curiousconcept"><img src="web/ui/assets/static/curiousconcept-patreon-button-dark.png" alt="Support on Patreon" width="240"></a>
+  <a href="https://www.patreon.com/phrenolt"><img src="web/ui/assets/static/curiousconcept-patreon-button-dark.png" alt="Support on Patreon" width="240"></a>
 </p>
 
 ## Screenshots
