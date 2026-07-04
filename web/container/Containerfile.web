@@ -44,16 +44,6 @@ RUN apt-get update \
        curl \
     && rm -rf /var/lib/apt/lists/*
 
-# FSRCNNX_x2 neural upscale shader (mpv .hook format). The old
-# bjin/mpv-prescalers URL now 404s (that repo dropped FSRCNNX, keeping only
-# nnedi3/ravu), so the build silently fell back to ewa_lanczos. Pull from a
-# stable mirror instead; libplacebo's custom_shader_path consumes it.
-RUN mkdir -p /usr/local/share/aceman/shaders \
-    && (curl -fsSL -o /usr/local/share/aceman/shaders/FSRCNNX_x2_16-0-4-1.glsl \
-        https://raw.githubusercontent.com/awused/dotfiles/master/mpv/.config/mpv/shaders/fsrcnnx/FSRCNNX_x2_16-0-4-1.glsl \
-        && echo "FSRCNNX shader downloaded" \
-        || echo "Warning: FSRCNNX shader download failed — ewa_lanczos fallback active")
-
 WORKDIR /app
 
 # Project root is the build context. We only need web/, the mpegts.js

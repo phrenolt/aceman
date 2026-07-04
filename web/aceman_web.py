@@ -986,10 +986,6 @@ class Handler(http.server.BaseHTTPRequestHandler):
                   "-rc", "vbr", "-cq", "20", "-bf", "3", "-b_ref_mode", "middle",
                   "-g", "50", "-keyint_min", "50"]
 
-    # FSRCNNX 2x neural upscale shader (mpv GLSL hook format).
-    # Baked into the container image by Containerfile.web.
-    _FSRCNNX_SHADER = "/usr/local/share/aceman/shaders/FSRCNNX_x2_16-0-4-1.glsl"
-
     @classmethod
     def _probe_src_dims(cls, url: str) -> "tuple[int,int] | None":
         """ffprobe the first video stream to get width × height.
@@ -1025,7 +1021,6 @@ class Handler(http.server.BaseHTTPRequestHandler):
         vaapi_out=False: sets libplacebo's output format to yuv420p then bare
         hwdownload, for CPU or NVENC encode.
         """
-        import os as _os
         nodes = []
         if src_w and src_h:
             nodes.append(f"scale={src_w}:{src_h}")
@@ -1038,23 +1033,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
         # Vulkan surface is rgb0). The vaapi hwmap path keeps native surfaces.
         fmt = "" if vaapi_out else ":format=yuv420p"
 
-        use_fsrcnnx = (
-            src_w and src_h
-            and src_h * 2 == out_h
-            and _os.path.exists(cls._FSRCNNX_SHADER)
-        )
-        if use_fsrcnnx:
-            nodes.append(
-                f"libplacebo=w={src_w * 2}:h={out_h}"
-                f":custom_shader_path={cls._FSRCNNX_SHADER}"
-                f":disable_builtin=true{fmt}"
-            )
-            _log("proxy", "scale: FSRCNNX_x2 neural shader (%dx%d → %dx%d)",
-                 src_w, src_h, src_w * 2, out_h)
-        else:
-            nodes.append(f"libplacebo=w=-2:h={out_h}:upscaler=ewa_lanczos{fmt}")
-            _log("proxy", "scale: libplacebo ewa_lanczos → %dp%s",
-                 out_h, " (FSRCNNX not available)" if not _os.path.exists(cls._FSRCNNX_SHADER) else "")
+        # ewa_lanczos, not the FSRCNNX neural shader: FSRCNNX_x2 is sub-realtime
+        # at 4K (~0.8x on an RTX 3090), so on a live stream it drains the player
+        # buffer and the browser disconnects. ewa_lanczos does 1080p→2160p at
+        # ~1.75x realtime with near-identical results on deinterlaced motion.
+        nodes.append(f"libplacebo=w=-2:h={out_h}:upscaler=ewa_lanczos{fmt}")
+        _log("proxy", "scale: libplacebo ewa_lanczos → %dp", out_h)
 
         if vaapi_out:
             # Zero-copy: map Vulkan DMA-buf to VAAPI surface (same physical GPU).
@@ -1141,7 +1125,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
     @classmethod
     def _nvidia_cmd(cls, playback_url: str, gpu: dict) -> list:
         """NVIDIA path: software decode → bwdif → libplacebo Vulkan upscale
-        (FSRCNNX neural shader at exact 2x, else ewa_lanczos) → h264_nvenc.
+        (ewa_lanczos) → h264_nvenc.
 
         libplacebo runs on the real GPU: NVIDIA enumerates as a Vulkan device
         once libEGL.so.1 is present (the web image ships libegl1 — its absence
