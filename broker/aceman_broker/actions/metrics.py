@@ -107,17 +107,29 @@ def _sysfs_gpu_busy() -> "float | None":
 
 def _gpu_pct(kind: "str | None") -> "float | None":
     if kind == "nvidia" and shutil.which("nvidia-smi"):
+        # utilization.gpu is ONLY the SM (graphics/compute) engine — it does
+        # NOT include NVENC or NVDEC, which are separate fixed-function blocks
+        # with their own counters. A pure NVENC transcode can pin the encoder
+        # while utilization.gpu reads near zero, so we query all three engines
+        # and report the busiest. Without this, "GPU encode" looks idle.
         try:
             r = subprocess.run(
-                ["nvidia-smi", "--query-gpu=utilization.gpu",
+                ["nvidia-smi",
+                 "--query-gpu=utilization.gpu,utilization.encoder,"
+                 "utilization.decoder",
                  "--format=csv,noheader,nounits"],
                 capture_output=True, text=True, timeout=3,
             )
             line = r.stdout.strip().splitlines()
-            return float(line[0]) if line else None
+            if not line:
+                return None
+            vals = [float(x) for x in line[0].split(",")]
+            return max(vals) if vals else None
         except (subprocess.TimeoutExpired, OSError, ValueError):
             return None
     # AMD + Intel (and nvidia-drm without nvidia-smi) all read the same sysfs.
+    # gpu_busy_percent is a whole-GPU figure that already reflects the VCN
+    # video engines, so no separate encode/decode query is needed there.
     return _sysfs_gpu_busy()
 
 

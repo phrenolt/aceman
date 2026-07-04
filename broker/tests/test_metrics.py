@@ -105,12 +105,16 @@ class GpuBusyTests(unittest.TestCase):
             with mock.patch.object(metrics, "_drm_cards", return_value=[card]):
                 self.assertIsNone(metrics._sysfs_gpu_busy())
 
-    def test_gpu_pct_nvidia_uses_smi(self):
-        completed = mock.Mock(stdout="27\n")
+    def test_gpu_pct_nvidia_reports_busiest_engine(self):
+        # SM idle but NVENC pinned: the encoder column must win, otherwise a
+        # GPU transcode looks idle (utilization.gpu excludes NVENC/NVDEC).
+        completed = mock.Mock(stdout="3, 88, 0\n")
         with mock.patch("shutil.which", return_value="/usr/bin/nvidia-smi"), \
              mock.patch("subprocess.run", return_value=completed) as run:
-            self.assertEqual(metrics._gpu_pct("nvidia"), 27.0)
-            self.assertIn("nvidia-smi", run.call_args.args[0][0])
+            self.assertEqual(metrics._gpu_pct("nvidia"), 88.0)
+            query = run.call_args.args[0][1]
+            self.assertIn("utilization.encoder", query)
+            self.assertIn("utilization.decoder", query)
 
     def test_gpu_pct_amd_uses_sysfs_not_smi(self):
         with mock.patch.object(metrics, "_sysfs_gpu_busy", return_value=55.0) as busy, \
