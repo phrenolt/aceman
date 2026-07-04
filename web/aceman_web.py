@@ -1122,19 +1122,31 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
     _VULKAN_INIT = ["-init_hw_device", "vulkan=vk:0", "-filter_hw_device", "vk"]
 
+    # NVIDIA scaling runs through scale_cuda, NOT libplacebo/Vulkan. The
+    # NVIDIA GPU does not enumerate as a Vulkan device inside the web
+    # container (only Mesa's llvmpipe software rasterizer does), so a
+    # libplacebo upscale silently ran on the CPU — 4K on an RTX 3090 pegged
+    # a core and crawled at ~0.02 MB/s. scale_cuda uses the real GPU via the
+    # same CUDA stack NVENC already loads, so decode stays on the CPU (robust
+    # against corrupt acestream packets) while the heavy upscale is on-GPU.
+    _CUDA_INIT = ["-init_hw_device", "cuda=cu:0", "-filter_hw_device", "cu"]
+
     @classmethod
     def _nvidia_cmd(cls, playback_url: str, gpu: dict) -> list:
-        """NVIDIA path: software decode → yadif → libplacebo Vulkan upscale
-        → h264_nvenc encode (h264_nvenc accepts CPU frames after hwdownload).
+        """NVIDIA path: software decode → yadif → scale_cuda upscale on the
+        GPU → h264_nvenc (consumes CUDA frames directly, no hwdownload).
+
+        With CPU encode selected the scaled CUDA frames are downloaded
+        (scale_cuda → hwdownload → libx264); the upscale still runs on the GPU.
         """
         do_enc = gpu.get("encode", False)
         do_dei = gpu.get("deinterlace", False)
         scale_h = gpu.get("scale")
 
-        vulkan = cls._VULKAN_INIT if scale_h else []
+        cuda = cls._CUDA_INIT if scale_h else []
         pre = [
             "ffmpeg", "-hide_banner", "-loglevel", "warning",
-        ] + vulkan + [
+        ] + cuda + [
             "-fflags", "+nobuffer+discardcorrupt", "-err_detect", "ignore_err",
             "-flush_packets", "1",
             "-i", playback_url,
@@ -1144,15 +1156,22 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if do_dei:
             filters.append("yadif")
         if scale_h:
-            src = cls._probe_src_dims(playback_url)
-            src_w, src_h = src if src else (None, None)
-            filters.extend(cls._libplacebo_scale(src_w, src_h, scale_h))
+            # format=nv12 → upload to the GPU → lanczos resize on the GPU.
+            filters += [
+                "format=nv12", "hwupload_cuda",
+                f"scale_cuda=w=-2:h={scale_h}:interp_algo=lanczos",
+            ]
+            _log("proxy", "scale: scale_cuda lanczos → %dp", scale_h)
 
         if do_enc:
+            # h264_nvenc takes the CUDA frames scale_cuda produced as-is.
             video = (["-vf", ",".join(filters)] if filters else []) + [
                 "-c:v", "h264_nvenc", "-preset", "p1", "-tune", "ll",
             ] + cls._FFMPEG_GOP
         else:
+            # CPU encode: bring the scaled frames back to system memory first.
+            if scale_h:
+                filters += ["hwdownload", "format=nv12"]
             sw = (["-c:v", "libx264", "-preset", "ultrafast",
                    "-tune", "zerolatency", "-pix_fmt", "yuv420p"] + cls._FFMPEG_GOP
                   if cls._ffmpeg_has_h264_decoder else ["-c:v", "copy"])
