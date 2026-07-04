@@ -2,8 +2,8 @@
 
 Runs on the host (the web container can't see host CPU or the GPU driver),
 same rationale as the gpu.status probe. Sampling is LAZY: each `sys.usage`
-call takes one sample and appends it to a rolling 10-second window, then
-returns the window average. The frontend polls every few seconds, so ~3-5
+call takes one sample and appends it to a rolling 20-second window, then
+returns the window average. The frontend polls every few seconds, so ~6-7
 samples make up the average — no always-on background thread spawning
 nvidia-smi when nobody's looking.
 
@@ -27,7 +27,7 @@ from collections import deque
 from .gpu import _NVIDIA_CTL
 from . import register as _register
 
-_WINDOW_SECS = 10.0
+_WINDOW_SECS = 20.0
 _lock = threading.Lock()
 _prev_cpu: "tuple[int, int] | None" = None       # (total, idle) from last call
 _window: "deque[tuple[float, float | None, float | None]]" = deque()  # (ts, cpu%, gpu%)
