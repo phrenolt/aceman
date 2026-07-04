@@ -167,6 +167,7 @@ class RegistryShapeTests(unittest.TestCase):
             "desktop.restore_mimeapps_backup",
             "broker.version", "broker.shutdown", "broker.respawn",
             "restart.preflight", "web.restart", "web.memory",
+            "sys.usage",
         }
         self.assertEqual(set(dispatcher.ACTIONS.keys()), expected)
 

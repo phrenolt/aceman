@@ -42,7 +42,7 @@ import { describePlayButtonGate } from './lib/engine/play_button_gate.js';
 import { allFavs, loadFavs, updateSaveButton, browserFavs } from '../favourites/index.js';
 import { refreshSearchSection, refreshClearButton } from '../search/index.js';
 import { detectedPlayers, detectedBrowsers, _currentBrowserName } from './detection.js';
-import { buildGpuParams, gpuEncodeLabel } from '../gpu/index.js';
+import { buildGpuParams, gpuPipelineLabel } from '../gpu/index.js';
 import { mode, noLocalDesktop } from '../../shared/runtime.js';
 
 // The active stream, just enough to drive the Save button: we no longer
@@ -180,9 +180,10 @@ function startInBrowserPlayback(cid) {
   let buffering = bufferSecs > 0;
   let mediaInfoText = '';
   let speedMbps = null;
-  // Encode path label shown in the status line — computed once at play
-  // time from the GPU settings so it reflects what was actually sent.
-  const encodeLabel = gpuEncodeLabel();
+  // Full pipeline label shown in the status line (encoder · deinterlace ·
+  // upscaler) — computed once at play time from the GPU settings so it
+  // reflects what was actually sent to the proxy.
+  const encodeLabel = gpuPipelineLabel();
   let currentFps = null;
   let _lastFrames = null;
   let _lastFrameTime = null;

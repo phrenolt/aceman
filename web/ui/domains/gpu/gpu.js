@@ -47,6 +47,27 @@ export function gpuEncodeLabel() {
   return 'CPU';
 }
 
+// Full pipeline description for the playback status line, e.g.
+//   "NVENC · deint bwdif · ↑2160p ewa_lanczos"
+//   "remux (no re-encode)"
+// Mirrors the branches the proxy actually builds server-side: encode off is a
+// lossless remux; scaling only applies with a GPU backend (the CPU path has no
+// scaler); deinterlace/scale use bwdif/ewa_lanczos. Derived from the live caps
+// + saved settings, so it reflects what was sent to the proxy for this play.
+export function gpuPipelineLabel() {
+  const s = _loadGpuSettings();
+  const h264Ok = _gpuCaps && (_gpuCaps.nvidia || (_gpuCaps.vaapi && _gpuCaps.vaapi.h264_enc));
+  const backend = _gpuCaps && _gpuCaps.nvidia ? 'nvidia'
+                : _gpuCaps && _gpuCaps.vaapi ? 'vaapi' : null;
+  const parts = [];
+  if (s.encode && backend && h264Ok) parts.push(backend === 'nvidia' ? 'NVENC' : 'VA-API');
+  else if (s.encode)                 parts.push('CPU x264');
+  else                               parts.push('remux (no re-encode)');
+  if (s.deinterlace)     parts.push('deint bwdif');
+  if (s.scale && backend) parts.push('↑' + s.scale + 'p ewa_lanczos');
+  return parts.join(' · ');
+}
+
 export async function initGpuCard() {
   let caps;
   try {
