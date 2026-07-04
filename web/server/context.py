@@ -28,6 +28,7 @@ from .broker_client import (
     GpuBrokerClient,
     ImageBrokerClient,
     PlayersBrokerClient,
+    SysBrokerClient,
     WebBrokerClient,
 )
 from .config_store import Config
@@ -53,6 +54,7 @@ class RouteContext:
     browsers_client: Optional[BrowsersBrokerClient] = None
     desktop_entry: Optional[DesktopBrokerClient] = None
     web_client: Optional[WebBrokerClient] = None
+    sys_client: Optional[SysBrokerClient] = None
     search_proxy: Optional[SearchProxy] = None
     heartbeat: HeartbeatTracker = field(default_factory=HeartbeatTracker)
     # True when there's no Linux desktop the user can use at this server —

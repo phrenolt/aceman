@@ -105,6 +105,7 @@ from server.broker_client import (
     GpuBrokerClient,
     ImageBrokerClient,
     PlayersBrokerClient,
+    SysBrokerClient,
     WebBrokerClient,
 )
 from server.search import SearchError, _NoRedirectHandler, SearchProxy
@@ -446,6 +447,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
     players_client: "PlayersBrokerClient | None" = None
     browsers_client: "BrowsersBrokerClient | None" = None
     web_client: "WebBrokerClient | None" = None
+    sys_client: "SysBrokerClient | None" = None
     config_dir: "pathlib.Path | None" = None
     db_path: "pathlib.Path | None" = None
     config_path: "pathlib.Path | None" = None
@@ -979,13 +981,17 @@ class Handler(http.server.BaseHTTPRequestHandler):
     # extra frames, so trade latency for a much cleaner picture. The old
     # `-preset p1 -tune ll` (fastest preset, low-latency) with NO rate control
     # re-encoded at NVENC's low default bitrate and visibly softened the image.
-    # p6+hq with VBR/CQ 20 is far sharper and still ~1.4x realtime at 4K on an
-    # RTX 3090. B-frames are deliberately OFF (-bf 0): their DTS/PTS reordering
-    # made mpegts.js/MSE stall ("stuck at 0", SourceBuffer full) — the small
-    # compression gain isn't worth breaking playback. -g 50 = 2s GOP for MSE.
+    # p6+hq with VBR/CQ is far sharper and still ~1.4x realtime at 4K on a 3090.
+    #
+    # -maxrate/-bufsize CAP is essential, not optional: unconstrained -cq 20 on
+    # upscaled 4K emitted ~90 Mbps, which overran the browser's MSE SourceBuffer
+    # ("full, suspend transmuxing") faster than it could decode → stutter/stall.
+    # 24 Mbps (2s VBV) is still excellent 4K and comfortably decodes/streams.
+    # B-frames are OFF (-bf 0): their DTS/PTS reordering made mpegts.js/MSE stall
+    # ("stuck at 0"), and the compression gain isn't worth it. -g 50 = 2s GOP.
     _NVENC_ENC = ["-c:v", "h264_nvenc", "-preset", "p6", "-tune", "hq",
-                  "-rc", "vbr", "-cq", "20", "-bf", "0",
-                  "-g", "50", "-keyint_min", "50"]
+                  "-rc", "vbr", "-cq", "22", "-maxrate", "24M", "-bufsize", "48M",
+                  "-bf", "0", "-g", "50", "-keyint_min", "50"]
 
     @classmethod
     def _probe_src_dims(cls, url: str) -> "tuple[int,int] | None":
@@ -2102,6 +2108,7 @@ def main(argv: list[str] | None = None) -> int:
     Handler.players_client = PlayersBrokerClient(broker)
     Handler.browsers_client = BrowsersBrokerClient(broker)
     Handler.web_client = WebBrokerClient(broker)
+    Handler.sys_client = SysBrokerClient(broker)
     Handler.db_path = pathlib.Path(args.db)
     Handler.config_path = pathlib.Path(args.config)
     Handler.config_dir = Handler.db_path.parent
@@ -2123,6 +2130,7 @@ def main(argv: list[str] | None = None) -> int:
         players_client=Handler.players_client,
         browsers_client=Handler.browsers_client,
         web_client=Handler.web_client,
+        sys_client=Handler.sys_client,
         desktop_entry=Handler.desktop_entry,
         search_proxy=Handler.search_proxy,
         heartbeat=Handler.heartbeat,
