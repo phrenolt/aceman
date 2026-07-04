@@ -975,6 +975,16 @@ class Handler(http.server.BaseHTTPRequestHandler):
     _FFMPEG_GOP       = ["-g", "50", "-keyint_min", "50", "-sc_threshold", "0", "-bf", "0"]
     # h264_vaapi GOP: drop -sc_threshold (libx264-only; causes a warning with vaapi).
     _FFMPEG_GOP_VAAPI = ["-g", "50", "-keyint_min", "50", "-bf", "0"]
+    # NVENC encode tuned for QUALITY, not latency: a buffered player absorbs the
+    # extra frames, so trade latency for a much cleaner picture. The old
+    # `-preset p1 -tune ll` (fastest preset, low-latency) with NO rate control
+    # re-encoded at NVENC's low default bitrate and visibly softened the image;
+    # `-tune ll` also disables B-frames and lookahead. p6+hq with VBR/CQ 20 and
+    # B-frames is far sharper and still ~1.7x realtime at 4K on an RTX 3090.
+    # -g 50 keeps a 2s GOP so MSE seeking/keyframe cadence is unchanged.
+    _NVENC_ENC = ["-c:v", "h264_nvenc", "-preset", "p6", "-tune", "hq",
+                  "-rc", "vbr", "-cq", "20", "-bf", "3", "-b_ref_mode", "middle",
+                  "-g", "50", "-keyint_min", "50"]
 
     # FSRCNNX 2x neural upscale shader (mpv GLSL hook format).
     # Baked into the container image by Containerfile.web.
@@ -1104,7 +1114,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def _cpu_cmd(cls, playback_url: str) -> list:
         """CPU path (original behaviour).
 
-        FULL (has H.264 decoder): decode → yadif → libx264 ultrafast.
+        FULL (has H.264 decoder): decode → bwdif → libx264 ultrafast.
         REMUX (ffmpeg-free): -c:v copy; works for clean progressive streams.
         Audio is always re-encoded to AAC because MP3-in-fMP4 is refused
         by every browser MSE implementation.
@@ -1117,7 +1127,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         ]
         if cls._ffmpeg_has_h264_decoder:
             video = [
-                "-vf", "yadif",
+                "-vf", "bwdif",
                 "-c:v", "libx264",
                 "-preset", "ultrafast", "-tune", "zerolatency",
                 "-pix_fmt", "yuv420p",
@@ -1130,7 +1140,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
     @classmethod
     def _nvidia_cmd(cls, playback_url: str, gpu: dict) -> list:
-        """NVIDIA path: software decode → yadif → libplacebo Vulkan upscale
+        """NVIDIA path: software decode → bwdif → libplacebo Vulkan upscale
         (FSRCNNX neural shader at exact 2x, else ewa_lanczos) → h264_nvenc.
 
         libplacebo runs on the real GPU: NVIDIA enumerates as a Vulkan device
@@ -1153,16 +1163,14 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
         filters = []
         if do_dei:
-            filters.append("yadif")
+            filters.append("bwdif")
         if scale_h:
             src = cls._probe_src_dims(playback_url)
             src_w, src_h = src if src else (None, None)
             filters.extend(cls._libplacebo_scale(src_w, src_h, scale_h))
 
         if do_enc:
-            video = (["-vf", ",".join(filters)] if filters else []) + [
-                "-c:v", "h264_nvenc", "-preset", "p1", "-tune", "ll",
-            ] + cls._FFMPEG_GOP
+            video = (["-vf", ",".join(filters)] if filters else []) + cls._NVENC_ENC
         else:
             sw = (["-c:v", "libx264", "-preset", "ultrafast",
                    "-tune", "zerolatency", "-pix_fmt", "yuv420p"] + cls._FFMPEG_GOP
@@ -1175,13 +1183,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def _vaapi_cmd(cls, playback_url: str, gpu: dict) -> list:
         """VA-API path.
 
-        With scaling: software decode → yadif → libplacebo Vulkan upscale
+        With scaling: software decode → bwdif → libplacebo Vulkan upscale
         (hwupload→libplacebo→hwdownload) → libx264.  Using VAAPI encode after
         a Vulkan hwdownload would need a second hwupload targeted at the VAAPI
         device; with -filter_hw_device already bound to Vulkan that conflicts,
         so libx264 handles the encode for the scale path.
 
-        Without scaling: software decode → yadif → [format=nv12,hwupload]
+        Without scaling: software decode → bwdif → [format=nv12,hwupload]
         → h264_vaapi (the path that originally worked without stalls).
         """
         do_enc = gpu.get("encode", False)
@@ -1192,7 +1200,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
         filters = []
         if do_dei:
-            filters.append("yadif")
+            filters.append("bwdif")
 
         if scale_h:
             src = cls._probe_src_dims(playback_url)
