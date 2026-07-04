@@ -2100,8 +2100,16 @@ def main(argv: list[str] | None = None) -> int:
     # arg is no longer consulted — the path is fixed on the host side
     # (~/.local/share/applications/aceman.desktop), and the broker
     # is the single source of truth.
+    # The .desktop Exec= line must carry the HOST-FACING publish address,
+    # not args.host — in container mode python always binds 0.0.0.0 inside
+    # the namespace (that's the internal bind), while the real boundary is
+    # the published host (ACE_WEB_HOST, default 127.0.0.1). Using args.host
+    # here baked 0.0.0.0 into every reinstall, silently re-exposing the web
+    # UI on the LAN. Prefer the publish host the launcher passed in; fall
+    # back to args.host for native mode where they're the same.
+    _publish_host = os.environ.get("ACE_WEB_HOST") or args.host
     Handler.desktop_entry = DesktopBrokerClient(
-        broker, host=args.host, port=args.port,
+        broker, host=_publish_host, port=args.port,
     )
     Handler.gpu_client = GpuBrokerClient(broker)
     Handler.image_mgr = ImageBrokerClient(broker)
