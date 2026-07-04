@@ -2154,6 +2154,9 @@ def main(argv: list[str] | None = None) -> int:
         # a second wrapper invocation. Pure peek — the claim path
         # (POST /api/play-request/claim) is what atomically clears.
         pending_play_cid_peek=lambda: Handler._pending_play_cid,
+        # Read at request time: the ffmpeg H.264-decoder probe runs just
+        # below, after this context is constructed.
+        cpu_reencode=lambda: Handler._ffmpeg_has_h264_decoder,
     )
     Handler.router = Router()
     _register_routes(Handler.router)
