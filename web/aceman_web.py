@@ -1012,7 +1012,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
         vaapi_out=True: ends with hwmap=derive_device=vaapi for zero-copy
         VAAPI encode — Vulkan DMA-buf is shared directly with VAAPI on AMD/Intel.
-        vaapi_out=False: ends with hwdownload,format=yuv420p for CPU encode.
+        vaapi_out=False: sets libplacebo's output format to yuv420p then bare
+        hwdownload, for CPU or NVENC encode.
         """
         import os as _os
         nodes = []
@@ -1020,6 +1021,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
             nodes.append(f"scale={src_w}:{src_h}")
         # Upload to Vulkan (required — auto_scale_0 cannot produce Vulkan frames).
         nodes.append("hwupload")
+
+        # For the download path, force libplacebo's output surface to yuv420p.
+        # Otherwise it picks rgb0 and `hwdownload → format=yuv420p` fails with
+        # "Invalid output format yuv420p for hwframe download" (the NVIDIA
+        # Vulkan surface is rgb0). The vaapi hwmap path keeps native surfaces.
+        fmt = "" if vaapi_out else ":format=yuv420p"
 
         use_fsrcnnx = (
             src_w and src_h
@@ -1030,12 +1037,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
             nodes.append(
                 f"libplacebo=w={src_w * 2}:h={out_h}"
                 f":custom_shader_path={cls._FSRCNNX_SHADER}"
-                f":disable_builtin=true"
+                f":disable_builtin=true{fmt}"
             )
             _log("proxy", "scale: FSRCNNX_x2 neural shader (%dx%d → %dx%d)",
                  src_w, src_h, src_w * 2, out_h)
         else:
-            nodes.append(f"libplacebo=w=-2:h={out_h}:upscaler=ewa_lanczos")
+            nodes.append(f"libplacebo=w=-2:h={out_h}:upscaler=ewa_lanczos{fmt}")
             _log("proxy", "scale: libplacebo ewa_lanczos → %dp%s",
                  out_h, " (FSRCNNX not available)" if not _os.path.exists(cls._FSRCNNX_SHADER) else "")
 
@@ -1044,7 +1051,6 @@ class Handler(http.server.BaseHTTPRequestHandler):
             nodes.append("hwmap=derive_device=vaapi")
         else:
             nodes.append("hwdownload")
-            nodes.append("format=yuv420p")
         return nodes
 
     @classmethod
@@ -1122,31 +1128,24 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
     _VULKAN_INIT = ["-init_hw_device", "vulkan=vk:0", "-filter_hw_device", "vk"]
 
-    # NVIDIA scaling runs through scale_cuda, NOT libplacebo/Vulkan. The
-    # NVIDIA GPU does not enumerate as a Vulkan device inside the web
-    # container (only Mesa's llvmpipe software rasterizer does), so a
-    # libplacebo upscale silently ran on the CPU — 4K on an RTX 3090 pegged
-    # a core and crawled at ~0.02 MB/s. scale_cuda uses the real GPU via the
-    # same CUDA stack NVENC already loads, so decode stays on the CPU (robust
-    # against corrupt acestream packets) while the heavy upscale is on-GPU.
-    _CUDA_INIT = ["-init_hw_device", "cuda=cu:0", "-filter_hw_device", "cu"]
-
     @classmethod
     def _nvidia_cmd(cls, playback_url: str, gpu: dict) -> list:
-        """NVIDIA path: software decode → yadif → scale_cuda upscale on the
-        GPU → h264_nvenc (consumes CUDA frames directly, no hwdownload).
+        """NVIDIA path: software decode → yadif → libplacebo Vulkan upscale
+        (FSRCNNX neural shader at exact 2x, else ewa_lanczos) → h264_nvenc.
 
-        With CPU encode selected the scaled CUDA frames are downloaded
-        (scale_cuda → hwdownload → libx264); the upscale still runs on the GPU.
+        libplacebo runs on the real GPU: NVIDIA enumerates as a Vulkan device
+        once libEGL.so.1 is present (the web image ships libegl1 — its absence
+        made vk init fail and silently fall back to llvmpipe/CPU; see
+        Containerfile.web). h264_nvenc accepts the CPU frames after hwdownload.
         """
         do_enc = gpu.get("encode", False)
         do_dei = gpu.get("deinterlace", False)
         scale_h = gpu.get("scale")
 
-        cuda = cls._CUDA_INIT if scale_h else []
+        vulkan = cls._VULKAN_INIT if scale_h else []
         pre = [
             "ffmpeg", "-hide_banner", "-loglevel", "warning",
-        ] + cuda + [
+        ] + vulkan + [
             "-fflags", "+nobuffer+discardcorrupt", "-err_detect", "ignore_err",
             "-flush_packets", "1",
             "-i", playback_url,
@@ -1156,22 +1155,15 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if do_dei:
             filters.append("yadif")
         if scale_h:
-            # format=nv12 → upload to the GPU → lanczos resize on the GPU.
-            filters += [
-                "format=nv12", "hwupload_cuda",
-                f"scale_cuda=w=-2:h={scale_h}:interp_algo=lanczos",
-            ]
-            _log("proxy", "scale: scale_cuda lanczos → %dp", scale_h)
+            src = cls._probe_src_dims(playback_url)
+            src_w, src_h = src if src else (None, None)
+            filters.extend(cls._libplacebo_scale(src_w, src_h, scale_h))
 
         if do_enc:
-            # h264_nvenc takes the CUDA frames scale_cuda produced as-is.
             video = (["-vf", ",".join(filters)] if filters else []) + [
                 "-c:v", "h264_nvenc", "-preset", "p1", "-tune", "ll",
             ] + cls._FFMPEG_GOP
         else:
-            # CPU encode: bring the scaled frames back to system memory first.
-            if scale_h:
-                filters += ["hwdownload", "format=nv12"]
             sw = (["-c:v", "libx264", "-preset", "ultrafast",
                    "-tune", "zerolatency", "-pix_fmt", "yuv420p"] + cls._FFMPEG_GOP
                   if cls._ffmpeg_has_h264_decoder else ["-c:v", "copy"])

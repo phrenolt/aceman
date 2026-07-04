@@ -25,6 +25,13 @@ FROM docker.io/library/python:3.11-slim-bookworm
 # broker's VA-API probe: the broker runs `podman exec <web> vainfo` so the
 # GPU capability is read from the driver THIS image carries, not the host's
 # (Fedora ships a codec-stripped iHD on the host that hides H.264 encode).
+# libegl1 is NOT for EGL rendering — it's the GLVND libEGL.so.1 dispatch
+# stub that NVIDIA's Vulkan driver (libGLX_nvidia.so) dlopen()s during
+# init. CDI injects NVIDIA's own libs but not this distro stub; without it
+# vk_icdNegotiateLoaderICDInterfaceVersion fails with INITIALIZATION_FAILED,
+# the loader drops the NVIDIA ICD, and every libplacebo/Vulkan upscale
+# silently falls back to llvmpipe (software) — 4K then pegs the CPU. One
+# tiny package flips NVENC-only into full NVIDIA Vulkan (issue #12 follow-up).
 # --no-install-recommends keeps the image lean (no docs / X libs).
 # rm -rf /var/lib/apt/lists shaves another ~40 MB.
 RUN apt-get update \
@@ -32,13 +39,18 @@ RUN apt-get update \
        ffmpeg \
        mesa-va-drivers libva-drm2 mesa-vulkan-drivers \
        intel-media-va-driver i965-va-driver \
+       libegl1 \
        vainfo \
        curl \
     && rm -rf /var/lib/apt/lists/*
 
+# FSRCNNX_x2 neural upscale shader (mpv .hook format). The old
+# bjin/mpv-prescalers URL now 404s (that repo dropped FSRCNNX, keeping only
+# nnedi3/ravu), so the build silently fell back to ewa_lanczos. Pull from a
+# stable mirror instead; libplacebo's custom_shader_path consumes it.
 RUN mkdir -p /usr/local/share/aceman/shaders \
     && (curl -fsSL -o /usr/local/share/aceman/shaders/FSRCNNX_x2_16-0-4-1.glsl \
-        https://raw.githubusercontent.com/bjin/mpv-prescalers/master/FSRCNNX_x2_16-0-4-1.glsl \
+        https://raw.githubusercontent.com/awused/dotfiles/master/mpv/.config/mpv/shaders/fsrcnnx/FSRCNNX_x2_16-0-4-1.glsl \
         && echo "FSRCNNX shader downloaded" \
         || echo "Warning: FSRCNNX shader download failed — ewa_lanczos fallback active")
 
