@@ -11,13 +11,15 @@ command line.
 
 ## Get the files onto Windows
 
-Quickest — direct ZIP of the whole repo, no clicking around GitHub:
+Quickest — open **PowerShell** and paste this one line (use the copy button
+in the top-right of the box). It downloads the whole repo, extracts it into
+your Downloads, and — after you press Enter — launches `install.bat` for you:
 
-> **https://github.com/curiousconcept/aceman/archive/refs/heads/main.zip**
+```powershell
+[Net.ServicePointManager]::SecurityProtocol='Tls12'; Invoke-WebRequest https://github.com/curiousconcept/aceman/archive/refs/heads/main.zip -OutFile "$env:TEMP\aceman.zip"; Expand-Archive "$env:TEMP\aceman.zip" "$env:USERPROFILE\Downloads" -Force; $d="$env:USERPROFILE\Downloads\aceman-main\wsl"; Read-Host "Extracted to $d - press Enter to run install.bat"; Start-Process "$d\install.bat"
+```
 
-Download, extract, and open the `wsl/` folder inside. Keep all the files
-in that folder together. (Equivalent: on the repo page, **Code → Download
-ZIP**.)
+`install.bat` asks for admin (approve the UAC prompt) and takes it from there.
 
 ## 0. Make sure WiFi reconnects after reboot
 
@@ -45,12 +47,23 @@ Double-click **`install.bat`** and approve the UAC prompts. It:
 The Ace Stream engine tarball isn't shipped in the repo (it's
 proprietary). The web UI runs without it, but **playback needs it**.
 
+`install.bat` **offers this at the end of provisioning** — say **Y** there
+and it runs the import for you (see below). If you skipped it, or are setting
+up playback later, do it yourself:
+
 **Easy way — `import_engine.bat`.** Double-click it. It looks in your
 Windows **Downloads** for a file named like
 `acestream_3.2.11_ubuntu_22.04_x86_64_py3.10.tar.gz` and installs it into
 the clone as `engine.tar.gz` for you. If it isn't there yet, it prints the
 download link and **waits** — download the file in your browser, then press
 Enter in the window to finish. (It stays open the whole time.)
+
+Before installing it, the import **verifies the tarball's SHA-256** against
+the vetted hash the repo ships (`engine.tar.gz.sha256`). If it doesn't match
+— the upstream Ace Stream build changed since this aceman was released, or the
+file is corrupt — it **refuses** the file, says so, and keeps waiting for you
+to drop in the matching build. This is why nothing plays with a random engine
+tarball: aceman only installs the exact build it was tested against.
 
 **Manual way.** If you'd rather place it yourself:
 
@@ -129,8 +142,12 @@ enable_shared_networking.bat
 
 It does two things, then restarts WSL so they take effect:
 
-1. Writes `networkingMode=mirrored` to `%UserProfile%\.wslconfig` (per-user,
-   a one-time backup is saved as `.wslconfig.aceman-backup`).
+1. Writes `networkingMode=mirrored` **and** `hostAddressLoopback=true` to
+   `%UserProfile%\.wslconfig` (per-user, a one-time backup is saved as
+   `.wslconfig.aceman-backup`). The loopback line keeps
+   `http://localhost:8770/` — the web UI `run.bat` opens — reachable from
+   Windows; mirrored mode drops that automatic forwarding, so without it the
+   browser opens to a page that never loads.
 2. Opens **TCP port 6878** (the engine) inbound in Windows firewall. This
    step needs admin, so it pops **one UAC prompt** — approve it. Without
    the firewall rule, mirrored networking alone still leaves the phone
@@ -151,8 +168,8 @@ never needs it.
 > or shared Wi-Fi.
 
 To turn it back off, run **`disable_shared_networking.bat`** — it removes
-the `networkingMode` line, closes port 6878 (one UAC prompt), and restarts
-WSL, putting you back on default (NAT) networking.
+the `networkingMode` and `hostAddressLoopback` lines, closes port 6878 (one
+UAC prompt), and restarts WSL, putting you back on default (NAT) networking.
 
 `install.bat` offers the enable step as a prompt during setup; running
 the scripts yourself later does exactly the same thing.
@@ -234,9 +251,10 @@ The ones you actually run:
 | `update.bat`         | Force-update the project inside WSL (optional branch arg)    |
 | `uninstall.bat`      | Remove the distro + WSL (offers a favourites backup first)  |
 
-`internal/` holds bits used by `install.bat` and the optional handler —
-mostly no need to touch them: `setup.sh` (Linux provisioning),
+`internal/` holds bits used by `install.bat`, `run.bat` and the optional
+handler — mostly no need to touch them: `setup.sh` (Linux provisioning),
 `shortcut.bat` (Desktop-shortcut creator, also runnable on its own),
-`aceman.ico` (the shortcut icon), and `register-handler.bat` /
-`unregister-handler.bat` (the optional `acestream://` click-to-play
-handler — see above).
+`aceman.ico` (the shortcut icon), `wait_ready.ps1` (the browser-open helper
+`run.bat` calls — waits for the server, shows a busy cursor), and
+`register-handler.bat` / `unregister-handler.bat` (the optional
+`acestream://` click-to-play handler — see above).

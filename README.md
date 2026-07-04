@@ -18,12 +18,12 @@ watch **History**, built-in stream **Search** (a server-side proxy to
 `search-ace.stream`), and an adjustable playback **buffer**. Close the tab
 and it **auto-shuts down** — after a
 short idle timeout the web server stops itself and the engine container,
-so nothing keeps running (or eating bandwidth) in the background. A
+so nothing keeps running in the background. A
 host-side allow-list broker means the web never touches `podman` or
 anything host-related directly.
 
 <p align="center">
-  <a href="https://www.patreon.com/cw/curiousconcept"><img src="web/ui/assets/static/curiousconcept-patreon-button-dark.png" alt="Support on Patreon" width="240"></a>
+  <a href="https://www.patreon.com/phrenolt"><img src="web/ui/assets/static/curiousconcept-patreon-button-dark.png" alt="Support on Patreon" width="240"></a>
 </p>
 
 ## Screenshots
@@ -68,7 +68,7 @@ anything host-related directly.
 
 ## Quick start
 
-### Linux
+# Linux
 
 Requires rootless **Podman ≥ 4.0**, **Python ≥ 3.9** (stdlib only),
 **bash ≥ 4**, and **curl** + **jq**. The web UI plays in your **browser**,
@@ -216,20 +216,24 @@ flags this on NVIDIA boxes. (A GPU container also runs without a read-only
 rootfs, because the NVIDIA CDI hook runs `ldconfig`; all other container
 isolation is unchanged.)
 
-### Windows (WSL2)
+# Windows (WSL2)
 
-Grab the repo ZIP —
-[direct download](https://github.com/curiousconcept/aceman/archive/refs/heads/main.zip) —
-extract it, open the `wsl/` folder, then double-click `install.bat`
-followed by `run.bat`. As on Linux, you'll do the **one-time engine
-tarball download** (from
-[docs.acestream.net](https://docs.acestream.net/products/#linux)) and
-drop it into the clone — `wsl/README.md` shows the exact Windows path.
-Prefer Windows VLC/mpv over browser playback? `get_url_stream.bat <id>`
-hands a stream URL to your player. Full steps:
-**[`wsl/README.md`](wsl/README.md)**.
+Open **PowerShell** and paste this one line (use the copy button). It
+downloads the repo, extracts it to your Downloads, and — after you press
+Enter — launches the installer:
 
-### macOS
+```powershell
+[Net.ServicePointManager]::SecurityProtocol='Tls12'; Invoke-WebRequest https://github.com/curiousconcept/aceman/archive/refs/heads/main.zip -OutFile "$env:TEMP\aceman.zip"; Expand-Archive "$env:TEMP\aceman.zip" "$env:USERPROFILE\Downloads" -Force; $d="$env:USERPROFILE\Downloads\aceman-main\wsl"; Read-Host "Extracted to $d - press Enter to run install.bat"; Start-Process "$d\install.bat"
+```
+
+`install.bat` self-elevates (approve the UAC prompt), provisions WSL + Ubuntu,
+and offers the **one-time engine tarball import** (proprietary, from
+[docs.acestream.net](https://docs.acestream.net/products/#linux); verified
+against a vetted hash). Then launch with `run.bat`. Prefer Windows VLC/mpv
+over browser playback? `get_url_stream.bat <id>` hands a stream URL to your
+player. Full steps: **[`wsl/README.md`](wsl/README.md)**.
+
+# macOS
 
 _Not supported yet._
 

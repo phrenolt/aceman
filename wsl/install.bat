@@ -14,6 +14,30 @@ if %errorlevel% neq 0 (
 
 if /i "%~1"=="phase2" goto phase2
 
+:: If WSL already works (a previous install left it - even if its distro was
+:: removed), skip the enable+reboot and go straight to provisioning. The reboot
+:: is only needed the FIRST time WSL2's platform feature is turned on; once it's
+:: active a distro installs without a restart. Detect with two independent
+:: signals - EITHER is enough - because Store-based WSL runs WSL2 with only
+:: VirtualMachinePlatform (the legacy 'Microsoft-Windows-Subsystem-Linux'
+:: feature can read not-Enabled while WSL still works, which is why requiring it
+:: wrongly forced a reboot):
+::   1) `wsl --status` succeeds - the WSL app is installed and functional, or
+::   2) VirtualMachinePlatform already reads Enabled (WSL2 is active).
+:: Use `if errorlevel` (not %errorlevel%) so it's read at runtime inside blocks.
+echo Checking whether WSL already works...
+set "WSLREADY="
+wsl --status >nul 2>&1 && set "WSLREADY=1"
+if not defined WSLREADY (
+    powershell -NoProfile -Command "if((Get-WindowsOptionalFeature -Online -FeatureName VirtualMachinePlatform).State -eq 'Enabled'){exit 0}else{exit 1}"
+    if not errorlevel 1 set "WSLREADY=1"
+)
+if defined WSLREADY (
+    echo WSL is already available - skipping the reboot, going straight to provisioning.
+    echo.
+    goto phase2
+)
+
 :: ================= PHASE 1: enable WSL, then reboot =================
 echo === Phase 1: enabling WSL (no distro yet) ===
 
@@ -49,6 +73,11 @@ exit /b
 :phase2
 echo === Phase 2: installing Ubuntu + provisioning ===
 
+:: Self-heal a stale .wslconfig from an older aceman (hostAddressLoopback under
+:: [wsl2] instead of [experimental]) before the noisy wsl calls below, so WSL
+:: stops warning "unknown key 'wsl2.hostAddressLoopback'". No-op if clean.
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0internal\repair_wslconfig.ps1"
+
 :: feature is active now - actually install the distro
 echo Installing Ubuntu...
 wsl --install -d Ubuntu --no-launch
@@ -81,6 +110,30 @@ wsl -d Ubuntu -u root -- bash -c "tr -d '\r' < '%SH%' | bash"
 :: create the Windows Desktop shortcut (arg = run silently, no extra pause)
 echo Creating Desktop shortcut...
 call "%~dp0internal\shortcut.bat" silent
+
+:: Apply /etc/wsl.conf NOW so the steps below run as the 'ace' user. setup.sh
+:: cloned the repo to ace's home (~/Projects/aceman) and set default=ace, but
+:: wsl.conf only takes effect on a fresh boot. Until this shutdown, `wsl` still
+:: logs in as root - whose ~ has no clone - so the engine import would fail with
+:: "~/Projects/aceman not found". The trailing shutdown below re-applies this
+:: (plus any networking change); an extra shutdown here is harmless.
+echo Applying WSL config so the next steps run as 'ace'...
+wsl --shutdown
+
+:: The Ace Stream engine tarball is proprietary and NOT shipped in the repo, so
+:: nothing plays until it's imported once. Offer it here so a fresh install is
+:: play-ready - otherwise the first launch dead-ends on "engine.tar.gz missing".
+:: import_engine.bat looks in Downloads and, if the file isn't there yet, prints
+:: the download link and waits. Say N to skip and run import_engine.bat later.
+echo.
+echo The Ace Stream engine is what actually PLAYS streams. It's a separate,
+echo proprietary download that is NOT bundled with aceman, so it has to be
+echo imported once. If you say Yes and it isn't in your Downloads yet, a
+echo window opens with the download link and waits for you. Say No to do it
+echo later with import_engine.bat ^(nothing will play until you do^).
+echo.
+choice /c YN /m "Import the Ace Stream engine now"
+if not errorlevel 2 call "%~dp0import_engine.bat" nopause
 
 :: Optional: let a phone/tablet on your LAN play streams. This switches WSL
 :: to "mirrored" networking (enable_shared_networking.bat does the work).
