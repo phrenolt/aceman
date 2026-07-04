@@ -978,12 +978,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
     # NVENC encode tuned for QUALITY, not latency: a buffered player absorbs the
     # extra frames, so trade latency for a much cleaner picture. The old
     # `-preset p1 -tune ll` (fastest preset, low-latency) with NO rate control
-    # re-encoded at NVENC's low default bitrate and visibly softened the image;
-    # `-tune ll` also disables B-frames and lookahead. p6+hq with VBR/CQ 20 and
-    # B-frames is far sharper and still ~1.7x realtime at 4K on an RTX 3090.
-    # -g 50 keeps a 2s GOP so MSE seeking/keyframe cadence is unchanged.
+    # re-encoded at NVENC's low default bitrate and visibly softened the image.
+    # p6+hq with VBR/CQ 20 is far sharper and still ~1.4x realtime at 4K on an
+    # RTX 3090. B-frames are deliberately OFF (-bf 0): their DTS/PTS reordering
+    # made mpegts.js/MSE stall ("stuck at 0", SourceBuffer full) — the small
+    # compression gain isn't worth breaking playback. -g 50 = 2s GOP for MSE.
     _NVENC_ENC = ["-c:v", "h264_nvenc", "-preset", "p6", "-tune", "hq",
-                  "-rc", "vbr", "-cq", "20", "-bf", "3", "-b_ref_mode", "middle",
+                  "-rc", "vbr", "-cq", "20", "-bf", "0",
                   "-g", "50", "-keyint_min", "50"]
 
     @classmethod

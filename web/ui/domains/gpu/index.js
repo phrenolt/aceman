@@ -2,4 +2,4 @@
 // bootstrap) import from here, never from the files behind it —
 // this is the boundary. Internals stay private to the folder.
 
-export { buildGpuParams, gpuEncodeLabel, initGpuCard } from './gpu.js';
+export { buildGpuParams, gpuEncodeLabel, gpuPipelineLabel, initGpuCard } from './gpu.js';
