@@ -983,14 +983,17 @@ class Handler(http.server.BaseHTTPRequestHandler):
     # re-encoded at NVENC's low default bitrate and visibly softened the image.
     # p6+hq with VBR/CQ is far sharper and still ~1.4x realtime at 4K on a 3090.
     #
-    # -maxrate/-bufsize CAP is essential, not optional: unconstrained -cq 20 on
-    # upscaled 4K emitted ~90 Mbps, which overran the browser's MSE SourceBuffer
-    # ("full, suspend transmuxing") faster than it could decode → stutter/stall.
-    # 24 Mbps (2s VBV) is still excellent 4K and comfortably decodes/streams.
+    # -maxrate/-bufsize CAP is a safety ceiling, not the target: unconstrained
+    # -cq on upscaled 4K emitted ~90 Mbps, which overran the browser's MSE
+    # SourceBuffer ("full, suspend transmuxing") faster than it could decode →
+    # stutter/stall. 50 Mbps (2s VBV) leaves cq22 far more headroom for its
+    # natural rate (sharper 4K) while staying well under the ~90 Mbps that
+    # actually broke MSE. cq22 is the real quality knob; most 1080p sits well
+    # below this cap, so it only bites on heavy upscaled 4K.
     # B-frames are OFF (-bf 0): their DTS/PTS reordering made mpegts.js/MSE stall
     # ("stuck at 0"), and the compression gain isn't worth it. -g 50 = 2s GOP.
     _NVENC_ENC = ["-c:v", "h264_nvenc", "-preset", "p6", "-tune", "hq",
-                  "-rc", "vbr", "-cq", "22", "-maxrate", "24M", "-bufsize", "48M",
+                  "-rc", "vbr", "-cq", "22", "-maxrate", "50M", "-bufsize", "100M",
                   "-bf", "0", "-g", "50", "-keyint_min", "50"]
 
     @classmethod
