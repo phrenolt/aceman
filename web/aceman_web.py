@@ -1060,7 +1060,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
         ``gpu`` is parsed from the proxy request's query string:
             {"backend": "nvidia"|"vaapi"|"qsv",
-             "encode": bool, "deinterlace": bool, "scale": int|None}
+             "encode": bool, "scale": int|None}  (deinterlace is automatic)
 
         Safety: if a backend is requested but the capability probe at
         startup found it absent, we log and fall back to CPU so the
@@ -1118,7 +1118,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         ]
         if cls._ffmpeg_has_h264_decoder:
             video = [
-                "-vf", "bwdif",
+                "-vf", cls._DEINT,
                 "-c:v", "libx264",
                 "-preset", "ultrafast", "-tune", "zerolatency",
                 "-pix_fmt", "yuv420p",
@@ -1126,6 +1126,14 @@ class Handler(http.server.BaseHTTPRequestHandler):
         else:
             video = ["-c:v", "copy"]
         return pre + video + cls._FFMPEG_AUDIO_OUT
+
+    # Deinterlace filter, applied automatically on every re-encoding path.
+    # deint=interlaced makes bwdif only process frames the decoder flags as
+    # interlaced and pass progressive frames through untouched — so there's no
+    # user toggle: broadcast (1080i/576i) gets cleaned, progressive content
+    # isn't needlessly field-doubled. It only works when we decode+re-encode;
+    # a -c:v copy remux carries no decoded frames to filter.
+    _DEINT = "bwdif=deint=interlaced"
 
     _VULKAN_INIT = ["-init_hw_device", "vulkan=vk:0", "-filter_hw_device", "vk"]
 
@@ -1140,7 +1148,6 @@ class Handler(http.server.BaseHTTPRequestHandler):
         Containerfile.web). h264_nvenc accepts the CPU frames after hwdownload.
         """
         do_enc = gpu.get("encode", False)
-        do_dei = gpu.get("deinterlace", False)
         scale_h = gpu.get("scale")
 
         vulkan = cls._VULKAN_INIT if scale_h else []
@@ -1152,9 +1159,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
             "-i", playback_url,
         ]
 
-        filters = []
-        if do_dei:
-            filters.append("bwdif")
+        # Auto-deinterlace whenever we re-encode (NVENC, or libx264 on the
+        # encode-off path when a decoder is present). A copy passthrough has
+        # no decoded frames to filter, so skip it there.
+        filters = [cls._DEINT] if (do_enc or cls._ffmpeg_has_h264_decoder) else []
         if scale_h:
             src = cls._probe_src_dims(playback_url)
             src_w, src_h = src if src else (None, None)
@@ -1184,14 +1192,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
         → h264_vaapi (the path that originally worked without stalls).
         """
         do_enc = gpu.get("encode", False)
-        do_dei = gpu.get("deinterlace", False)
         scale_h = gpu.get("scale")
         device = ((cls._gpu_caps or {}).get("vaapi") or {}).get(
             "device", "/dev/dri/renderD128")
 
-        filters = []
-        if do_dei:
-            filters.append("bwdif")
+        # Auto-deinterlace whenever we re-encode (h264_vaapi/libx264); the
+        # copy passthrough has nothing to filter. See _DEINT.
+        filters = [cls._DEINT] if (do_enc or cls._ffmpeg_has_h264_decoder) else []
 
         if scale_h:
             src = cls._probe_src_dims(playback_url)
@@ -1307,7 +1314,6 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 gpu_settings = {
                     "backend": backend,
                     "encode":      qs.get("gpu_enc",  [""])[0] == "1",
-                    "deinterlace": qs.get("gpu_dei",  [""])[0] == "1",
                 }
                 scale_str = qs.get("gpu_scale", [""])[0]
                 if scale_str.isdigit() and int(scale_str) > 0:

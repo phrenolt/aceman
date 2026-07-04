@@ -8,7 +8,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { gpuQueryParams } from '../domains/gpu/lib/gpu_params.js';
 
-const ALL_ON = { encode: true, deinterlace: true, scale: '1080' };
+const ALL_ON = { encode: true, scale: '1080' };
 
 test('null / unavailable caps → empty string', () => {
   assert.equal(gpuQueryParams(null, ALL_ON), '');
@@ -19,7 +19,7 @@ test('null / unavailable caps → empty string', () => {
 test('available but nothing enabled → empty string', () => {
   const caps = { available: true, nvidia: true };
   assert.equal(gpuQueryParams(caps, {}), '');
-  assert.equal(gpuQueryParams(caps, { encode: false, deinterlace: false, scale: '' }), '');
+  assert.equal(gpuQueryParams(caps, { encode: false, scale: '' }), '');
   assert.equal(gpuQueryParams(caps, undefined), '');
 });
 
@@ -60,15 +60,10 @@ test('vaapi without H.264 encode → encode flag suppressed', () => {
   // gpu_enc=1 against a backend that can't encode H.264.
   const caps = { available: true, vaapi: { h264_enc: false } };
   assert.equal(gpuQueryParams(caps, { encode: true }), '&gpu_backend=vaapi');
-  // …but filters (deinterlace/scale) still apply on that backend.
-  assert.equal(gpuQueryParams(caps, { encode: true, deinterlace: true }),
-               '&gpu_backend=vaapi&gpu_dei=1');
-});
-
-test('deinterlace-only enables the backend + dei flag, no enc', () => {
-  const caps = { available: true, nvidia: true };
-  assert.equal(gpuQueryParams(caps, { deinterlace: true }),
-               '&gpu_backend=nvidia&gpu_dei=1');
+  // …but scale still applies on that backend (deinterlace is automatic
+  // server-side and needs no query param).
+  assert.equal(gpuQueryParams(caps, { encode: true, scale: '1080' }),
+               '&gpu_backend=vaapi&gpu_scale=1080');
 });
 
 test('scale value is interpolated into the param', () => {
@@ -77,8 +72,8 @@ test('scale value is interpolated into the param', () => {
                '&gpu_backend=nvidia&gpu_scale=2160');
 });
 
-test('all three flags compose in a stable order', () => {
+test('both flags compose in a stable order', () => {
   const caps = { available: true, nvidia: true };
   assert.equal(gpuQueryParams(caps, ALL_ON),
-               '&gpu_backend=nvidia&gpu_enc=1&gpu_dei=1&gpu_scale=1080');
+               '&gpu_backend=nvidia&gpu_enc=1&gpu_scale=1080');
 });
