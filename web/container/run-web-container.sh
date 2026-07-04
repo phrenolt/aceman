@@ -29,7 +29,7 @@
 #   ACE_NAME           engine container name (default ace — used for DNS)
 #   ACE_ENGINE         engine URL the web hits (default http://$ACE_NAME:6878)
 #   ACE_NETWORK        shared podman network (default aceman-net)
-#   ACE_WEB_MEMORY     podman --memory value (default 1g)
+#   ACE_WEB_MEMORY     podman --memory value (default 2g)
 #   ACE_WEB_PIDS       podman --pids-limit   (default 256)
 #   ACE_DETACH         podman run -d if set  (default off — foreground)
 
@@ -53,7 +53,7 @@ ACE_WEB_PORT="${ACE_WEB_PORT:-8770}"
 ACE_WEB_HOST="${ACE_WEB_HOST:-127.0.0.1}"
 ACE_NAME="${ACE_NAME:-ace}"
 ACE_ENGINE="${ACE_ENGINE:-http://${ACE_NAME}:6878}"
-ACE_WEB_MEMORY="${ACE_WEB_MEMORY:-1g}"
+ACE_WEB_MEMORY="${ACE_WEB_MEMORY:-2g}"
 ACE_WEB_PIDS="${ACE_WEB_PIDS:-256}"
 
 command -v podman >/dev/null || { echo "podman not installed"; exit 1; }
@@ -168,7 +168,7 @@ DETACH_REQUESTED=""
 #   --tmpfs /tmp      writable scratch for ffmpeg subprocess /
 #                     python tempfile. Capped at 64m so a runaway
 #                     can't exhaust host disk.
-#   --memory          podman cgroup cap. Caps total RSS at 1g default,
+#   --memory          podman cgroup cap. Caps total RSS at 2g default,
 #                     overridable via $ACE_WEB_MEMORY.
 #   --pids-limit      cgroup cap on processes; bounds a forkbomb /
 #                     runaway-ffmpeg.
@@ -183,7 +183,7 @@ DETACH_REQUESTED=""
 #   * Only three narrow bind mounts visible — not your $HOME, not
 #     /etc, nothing else.
 #   * Separate PID, mount, network, IPC, UTS, user namespaces.
-#   * 1g memory cap / 256 PID cap.
+#   * 2g memory cap / 256 PID cap.
 #   * On the podman bridge only, no host-gateway to LAN.
 # An RCE in the python here could call the broker (intended), read
 # the three mounted dirs (already could via :z), and nothing else.
@@ -198,6 +198,35 @@ DETACH_REQUESTED=""
 DRI_ARGS=()
 [ -e /dev/dri/renderD128 ] && DRI_ARGS+=(--device /dev/dri/renderD128)
 
+# NVIDIA (NVENC) needs more than a device node: h264_nvenc loads the host
+# driver's libcuda.so.1, which only reaches the container when the GPU is
+# injected via CDI (Container Device Interface). Pass nvidia.com/gpu=all when
+# the driver control node exists AND a CDI spec is present (generated once with
+# `sudo nvidia-ctk cdi generate --output=/etc/cdi/nvidia.yaml`) — the same test
+# the broker's nvidia probe uses, so we never pass a device the probe didn't
+# advertise. Without CDI the container has no libcuda and NVENC dies with
+# "Cannot load libcuda.so.1" (issue #12); we skip it and playback falls back to
+# CPU/VA-API.
+_cdi_nvidia_spec() {
+    local d f
+    for d in /etc/cdi /var/run/cdi; do
+        for f in "$d"/nvidia*.yaml "$d"/nvidia*.json; do
+            [ -e "$f" ] && return 0
+        done
+    done
+    return 1
+}
+# nvidia's CDI createContainer hook runs ldconfig, which writes
+# /etc/ld.so.cache — impossible under a --read-only rootfs. So a GPU container
+# gets a writable rootfs; EVERY other isolation flag (cap-drop, no-new-privs,
+# userns, memory/pid caps, bridge-only network) is unchanged.
+NVIDIA_ARGS=()
+READONLY_ARGS=(--read-only)
+if [ -e /dev/nvidiactl ] && _cdi_nvidia_spec; then
+    NVIDIA_ARGS+=(--device nvidia.com/gpu=all)
+    READONLY_ARGS=()
+fi
+
 podman run -d --rm \
     --name "$ACE_WEB_NAME" \
     --network "$ACE_NETWORK" \
@@ -205,11 +234,13 @@ podman run -d --rm \
     --cap-drop=all \
     --security-opt=no-new-privileges \
     --security-opt label=disable \
-    --read-only --tmpfs /tmp:rw,size=64m,mode=1777 \
+    "${READONLY_ARGS[@]}" --tmpfs /tmp:rw,size=64m,mode=1777 \
     --memory "$ACE_WEB_MEMORY" \
     --pids-limit "$ACE_WEB_PIDS" \
     "${DRI_ARGS[@]}" \
+    "${NVIDIA_ARGS[@]}" \
     -p "$ACE_WEB_HOST:$ACE_WEB_PORT:$ACE_WEB_PORT" \
+    -e ACE_WEB_HOST="$ACE_WEB_HOST" \
     -e XDG_CONFIG_HOME=/xdg/config \
     -e XDG_CACHE_HOME=/xdg/cache \
     -e XDG_RUNTIME_DIR=/xdg/runtime \

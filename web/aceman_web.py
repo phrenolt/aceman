@@ -105,6 +105,7 @@ from server.broker_client import (
     GpuBrokerClient,
     ImageBrokerClient,
     PlayersBrokerClient,
+    SysBrokerClient,
     WebBrokerClient,
 )
 from server.search import SearchError, _NoRedirectHandler, SearchProxy
@@ -446,6 +447,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
     players_client: "PlayersBrokerClient | None" = None
     browsers_client: "BrowsersBrokerClient | None" = None
     web_client: "WebBrokerClient | None" = None
+    sys_client: "SysBrokerClient | None" = None
     config_dir: "pathlib.Path | None" = None
     db_path: "pathlib.Path | None" = None
     config_path: "pathlib.Path | None" = None
@@ -975,10 +977,21 @@ class Handler(http.server.BaseHTTPRequestHandler):
     _FFMPEG_GOP       = ["-g", "50", "-keyint_min", "50", "-sc_threshold", "0", "-bf", "0"]
     # h264_vaapi GOP: drop -sc_threshold (libx264-only; causes a warning with vaapi).
     _FFMPEG_GOP_VAAPI = ["-g", "50", "-keyint_min", "50", "-bf", "0"]
-
-    # FSRCNNX 2x neural upscale shader (mpv GLSL hook format).
-    # Baked into the container image by Containerfile.web.
-    _FSRCNNX_SHADER = "/usr/local/share/aceman/shaders/FSRCNNX_x2_16-0-4-1.glsl"
+    # NVENC encode tuned for QUALITY, not latency: a buffered player absorbs the
+    # extra frames, so trade latency for a much cleaner picture. The old
+    # `-preset p1 -tune ll` (fastest preset, low-latency) with NO rate control
+    # re-encoded at NVENC's low default bitrate and visibly softened the image.
+    # p6+hq with VBR/CQ is far sharper and still ~1.4x realtime at 4K on a 3090.
+    #
+    # -maxrate/-bufsize CAP is essential, not optional: unconstrained -cq 20 on
+    # upscaled 4K emitted ~90 Mbps, which overran the browser's MSE SourceBuffer
+    # ("full, suspend transmuxing") faster than it could decode → stutter/stall.
+    # 24 Mbps (2s VBV) is still excellent 4K and comfortably decodes/streams.
+    # B-frames are OFF (-bf 0): their DTS/PTS reordering made mpegts.js/MSE stall
+    # ("stuck at 0"), and the compression gain isn't worth it. -g 50 = 2s GOP.
+    _NVENC_ENC = ["-c:v", "h264_nvenc", "-preset", "p6", "-tune", "hq",
+                  "-rc", "vbr", "-cq", "22", "-maxrate", "24M", "-bufsize", "48M",
+                  "-bf", "0", "-g", "50", "-keyint_min", "50"]
 
     @classmethod
     def _probe_src_dims(cls, url: str) -> "tuple[int,int] | None":
@@ -1012,39 +1025,33 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
         vaapi_out=True: ends with hwmap=derive_device=vaapi for zero-copy
         VAAPI encode — Vulkan DMA-buf is shared directly with VAAPI on AMD/Intel.
-        vaapi_out=False: ends with hwdownload,format=yuv420p for CPU encode.
+        vaapi_out=False: sets libplacebo's output format to yuv420p then bare
+        hwdownload, for CPU or NVENC encode.
         """
-        import os as _os
         nodes = []
         if src_w and src_h:
             nodes.append(f"scale={src_w}:{src_h}")
         # Upload to Vulkan (required — auto_scale_0 cannot produce Vulkan frames).
         nodes.append("hwupload")
 
-        use_fsrcnnx = (
-            src_w and src_h
-            and src_h * 2 == out_h
-            and _os.path.exists(cls._FSRCNNX_SHADER)
-        )
-        if use_fsrcnnx:
-            nodes.append(
-                f"libplacebo=w={src_w * 2}:h={out_h}"
-                f":custom_shader_path={cls._FSRCNNX_SHADER}"
-                f":disable_builtin=true"
-            )
-            _log("proxy", "scale: FSRCNNX_x2 neural shader (%dx%d → %dx%d)",
-                 src_w, src_h, src_w * 2, out_h)
-        else:
-            nodes.append(f"libplacebo=w=-2:h={out_h}:upscaler=ewa_lanczos")
-            _log("proxy", "scale: libplacebo ewa_lanczos → %dp%s",
-                 out_h, " (FSRCNNX not available)" if not _os.path.exists(cls._FSRCNNX_SHADER) else "")
+        # For the download path, force libplacebo's output surface to yuv420p.
+        # Otherwise it picks rgb0 and `hwdownload → format=yuv420p` fails with
+        # "Invalid output format yuv420p for hwframe download" (the NVIDIA
+        # Vulkan surface is rgb0). The vaapi hwmap path keeps native surfaces.
+        fmt = "" if vaapi_out else ":format=yuv420p"
+
+        # ewa_lanczos, not the FSRCNNX neural shader: FSRCNNX_x2 is sub-realtime
+        # at 4K (~0.8x on an RTX 3090), so on a live stream it drains the player
+        # buffer and the browser disconnects. ewa_lanczos does 1080p→2160p at
+        # ~1.75x realtime with near-identical results on deinterlaced motion.
+        nodes.append(f"libplacebo=w=-2:h={out_h}:upscaler=ewa_lanczos{fmt}")
+        _log("proxy", "scale: libplacebo ewa_lanczos → %dp", out_h)
 
         if vaapi_out:
             # Zero-copy: map Vulkan DMA-buf to VAAPI surface (same physical GPU).
             nodes.append("hwmap=derive_device=vaapi")
         else:
             nodes.append("hwdownload")
-            nodes.append("format=yuv420p")
         return nodes
 
     @classmethod
@@ -1063,7 +1070,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             cmd = cls._cpu_cmd(playback_url)
         elif gpu.get("backend") == "nvidia":
             if not (cls._gpu_caps or {}).get("nvidia"):
-                _log("proxy", "NVIDIA requested but nvidia-smi absent — CPU fallback")
+                _log("proxy", "NVIDIA requested but unavailable (no driver or "
+                              "no container CDI passthrough) — CPU fallback")
                 cmd = cls._cpu_cmd(playback_url)
             else:
                 cmd = cls._nvidia_cmd(playback_url, gpu)
@@ -1097,7 +1105,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def _cpu_cmd(cls, playback_url: str) -> list:
         """CPU path (original behaviour).
 
-        FULL (has H.264 decoder): decode → yadif → libx264 ultrafast.
+        FULL (has H.264 decoder): decode → bwdif → libx264 ultrafast.
         REMUX (ffmpeg-free): -c:v copy; works for clean progressive streams.
         Audio is always re-encoded to AAC because MP3-in-fMP4 is refused
         by every browser MSE implementation.
@@ -1110,7 +1118,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         ]
         if cls._ffmpeg_has_h264_decoder:
             video = [
-                "-vf", "yadif",
+                "-vf", "bwdif",
                 "-c:v", "libx264",
                 "-preset", "ultrafast", "-tune", "zerolatency",
                 "-pix_fmt", "yuv420p",
@@ -1123,8 +1131,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
     @classmethod
     def _nvidia_cmd(cls, playback_url: str, gpu: dict) -> list:
-        """NVIDIA path: software decode → yadif → libplacebo Vulkan upscale
-        → h264_nvenc encode (h264_nvenc accepts CPU frames after hwdownload).
+        """NVIDIA path: software decode → bwdif → libplacebo Vulkan upscale
+        (ewa_lanczos) → h264_nvenc.
+
+        libplacebo runs on the real GPU: NVIDIA enumerates as a Vulkan device
+        once libEGL.so.1 is present (the web image ships libegl1 — its absence
+        made vk init fail and silently fall back to llvmpipe/CPU; see
+        Containerfile.web). h264_nvenc accepts the CPU frames after hwdownload.
         """
         do_enc = gpu.get("encode", False)
         do_dei = gpu.get("deinterlace", False)
@@ -1141,16 +1154,14 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
         filters = []
         if do_dei:
-            filters.append("yadif")
+            filters.append("bwdif")
         if scale_h:
             src = cls._probe_src_dims(playback_url)
             src_w, src_h = src if src else (None, None)
             filters.extend(cls._libplacebo_scale(src_w, src_h, scale_h))
 
         if do_enc:
-            video = (["-vf", ",".join(filters)] if filters else []) + [
-                "-c:v", "h264_nvenc", "-preset", "p1", "-tune", "ll",
-            ] + cls._FFMPEG_GOP
+            video = (["-vf", ",".join(filters)] if filters else []) + cls._NVENC_ENC
         else:
             sw = (["-c:v", "libx264", "-preset", "ultrafast",
                    "-tune", "zerolatency", "-pix_fmt", "yuv420p"] + cls._FFMPEG_GOP
@@ -1163,13 +1174,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def _vaapi_cmd(cls, playback_url: str, gpu: dict) -> list:
         """VA-API path.
 
-        With scaling: software decode → yadif → libplacebo Vulkan upscale
+        With scaling: software decode → bwdif → libplacebo Vulkan upscale
         (hwupload→libplacebo→hwdownload) → libx264.  Using VAAPI encode after
         a Vulkan hwdownload would need a second hwupload targeted at the VAAPI
         device; with -filter_hw_device already bound to Vulkan that conflicts,
         so libx264 handles the encode for the scale path.
 
-        Without scaling: software decode → yadif → [format=nv12,hwupload]
+        Without scaling: software decode → bwdif → [format=nv12,hwupload]
         → h264_vaapi (the path that originally worked without stalls).
         """
         do_enc = gpu.get("encode", False)
@@ -1180,7 +1191,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
         filters = []
         if do_dei:
-            filters.append("yadif")
+            filters.append("bwdif")
 
         if scale_h:
             src = cls._probe_src_dims(playback_url)
@@ -2089,14 +2100,23 @@ def main(argv: list[str] | None = None) -> int:
     # arg is no longer consulted — the path is fixed on the host side
     # (~/.local/share/applications/aceman.desktop), and the broker
     # is the single source of truth.
+    # The .desktop Exec= line must carry the HOST-FACING publish address,
+    # not args.host — in container mode python always binds 0.0.0.0 inside
+    # the namespace (that's the internal bind), while the real boundary is
+    # the published host (ACE_WEB_HOST, default 127.0.0.1). Using args.host
+    # here baked 0.0.0.0 into every reinstall, silently re-exposing the web
+    # UI on the LAN. Prefer the publish host the launcher passed in; fall
+    # back to args.host for native mode where they're the same.
+    _publish_host = os.environ.get("ACE_WEB_HOST") or args.host
     Handler.desktop_entry = DesktopBrokerClient(
-        broker, host=args.host, port=args.port,
+        broker, host=_publish_host, port=args.port,
     )
     Handler.gpu_client = GpuBrokerClient(broker)
     Handler.image_mgr = ImageBrokerClient(broker)
     Handler.players_client = PlayersBrokerClient(broker)
     Handler.browsers_client = BrowsersBrokerClient(broker)
     Handler.web_client = WebBrokerClient(broker)
+    Handler.sys_client = SysBrokerClient(broker)
     Handler.db_path = pathlib.Path(args.db)
     Handler.config_path = pathlib.Path(args.config)
     Handler.config_dir = Handler.db_path.parent
@@ -2118,6 +2138,7 @@ def main(argv: list[str] | None = None) -> int:
         players_client=Handler.players_client,
         browsers_client=Handler.browsers_client,
         web_client=Handler.web_client,
+        sys_client=Handler.sys_client,
         desktop_entry=Handler.desktop_entry,
         search_proxy=Handler.search_proxy,
         heartbeat=Handler.heartbeat,

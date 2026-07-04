@@ -14,6 +14,7 @@ import { openResetModal, closeResetModal, runFactoryReset } from './domains/fact
 import { initGpuCard, buildGpuParams, gpuEncodeLabel } from './domains/gpu/index.js';
 import { refreshImageStatus, installImage, uninstallImage } from './domains/image/index.js';
 import { initContainerMemory } from './domains/container-memory/index.js';
+import { initSysUsage } from './domains/sys-usage/index.js';
 import { initLogs } from './domains/logs/index.js';
 import { refreshDesktopEntry, toggleDesktopEntry } from './domains/desktop/index.js';
 import { onSearchInput, refreshSearchSection, refreshClearButton, clearCidInput,
@@ -110,6 +111,7 @@ import { parseId, loadPlayers, loadBrowsers, detectCurrentBrowser, detectedPlaye
   setInterval(refreshEngineStatus, 4000);
 
   initContainerMemory();
+  initSysUsage();
 
   // The Play button toggles ▶ (idle) / ⏹ (playing anywhere — this tab,
   // another browser, vlc, mpv). Stop tears down the in-browser proxy

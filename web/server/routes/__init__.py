@@ -26,6 +26,7 @@ def register_all(router: Router) -> None:
         players,
         search,
         storage_mode,
+        sys as sys_routes,
         web_routes,
     )
     browsers.register(router)
@@ -40,6 +41,7 @@ def register_all(router: Router) -> None:
     players.register(router)
     search.register(router)
     storage_mode.register(router)
+    sys_routes.register(router)
     web_routes.register(router)
     # NOTE: /api/player/stop, /api/open-in-browser, /api/stream/proxy,
     # /api/engine/image (POST/DELETE), /api/restart, /api/shutdown,
