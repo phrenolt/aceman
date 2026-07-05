@@ -11,8 +11,8 @@ class SysBrokerClient:
     Returned shape from ``usage()``:
 
         {
-            "cpu": float | null,       # % busy, 10 s rolling average
-            "gpu": float | null,       # % busy, 10 s average (null if unknown)
+            "cpu": float | null,       # % busy, 20 s rolling average
+            "gpu": float | null,       # % busy, 20 s average (null if unknown)
             "gpu_kind": "nvidia" | "amd" | "intel" | null,
             "window_secs": int,
         }

@@ -41,10 +41,18 @@ export function initLogs() {
 
   async function refreshActiveLogs() {
     if (!activeLogsKind) return;
-    const tab = findTab(activeLogsKind);
+    const kind = activeLogsKind;
+    const tab = findTab(kind);
     const status = tab.querySelector('[data-role="logs-status"]');
     try {
-      const r = await api('/api/logs?lines=300&kind=' + encodeURIComponent(activeLogsKind));
+      const r = await api('/api/logs?lines=300&kind=' + encodeURIComponent(kind));
+      // A fetch fired by the interval can still be in flight when the user
+      // clicks to select text (which auto-pauses) — clearInterval can't
+      // cancel it. If we got paused (explicit ⏸ or selection auto-pause) or
+      // switched tabs while it was in flight, drop the result: rewriting
+      // textContent would wipe the fresh selection and the re-scroll would
+      // jump the content down a line, exactly negating a last-line select.
+      if (activeLogsPaused || logsViewerAutoPaused || activeLogsKind !== kind) return;
       const wasAtBottom = logsViewer.scrollHeight - logsViewer.scrollTop
                           - logsViewer.clientHeight < 30;
       logsViewer.textContent = (r.tail || '(log is empty — no activity yet)').replace(/\\u000a/g, '\n');

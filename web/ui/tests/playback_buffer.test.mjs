@@ -62,9 +62,10 @@ test('bufferReady: gated until the target is reached', () => {
   assert.equal(bufferReady(ranges([0, 9]), 0, 5), true);
 });
 
-test('bufferLabel reads Off at zero, "N s" otherwise', () => {
+test('bufferLabel reads Off at zero, "(default)" at 10, "N s" otherwise', () => {
   assert.equal(bufferLabel(0), 'Off');
   assert.equal(bufferLabel(1), '1 s');
+  assert.equal(bufferLabel(10), '10 s (default)');
   assert.equal(bufferLabel(60), '60 s');
   assert.equal(bufferLabel(-3), 'Off');
 });

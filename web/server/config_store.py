@@ -44,7 +44,7 @@ class Config:
             "playback_mode": "external",
             "default_browser": "",
             "default_browser_source": "",
-            "buffer_secs": 0,
+            "buffer_secs": 10,
         }
         if path.is_file():
             try:

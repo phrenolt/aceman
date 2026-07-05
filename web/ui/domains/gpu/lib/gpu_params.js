@@ -11,7 +11,7 @@
 //   { available: bool, nvidia: bool, qsv: bool,
 //     vaapi: { h264_enc: bool } | falsy }
 // settings shape:
-//   { encode: bool, deinterlace: bool, scale: string }
+//   { encode: bool, scale: string }   (deinterlace is automatic server-side)
 //
 // Backend precedence: nvidia > qsv > vaapi. Encode is additionally
 // gated on H.264 encode support (always present on nvidia; on VA-API
@@ -21,7 +21,7 @@
 export function gpuQueryParams(caps, settings) {
   if (!caps || !caps.available) return '';
   const s = settings || {};
-  if (!s.encode && !s.deinterlace && !s.scale) return '';
+  if (!s.encode && !s.scale) return '';
 
   const backend = caps.nvidia ? 'nvidia'
                 : caps.vaapi  ? (caps.qsv ? 'qsv' : 'vaapi')
@@ -31,7 +31,6 @@ export function gpuQueryParams(caps, settings) {
   const h264Ok = !!(caps.nvidia || (caps.vaapi && caps.vaapi.h264_enc));
   let p = `&gpu_backend=${backend}`;
   if (s.encode && h264Ok) p += '&gpu_enc=1';
-  if (s.deinterlace)      p += '&gpu_dei=1';
   if (s.scale)            p += `&gpu_scale=${s.scale}`;
   return p;
 }

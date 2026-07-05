@@ -109,8 +109,8 @@ fi
 # Capture the buffer slider (config.json:buffer_secs) NOW, while the cfg
 # helper still exists — it's unset just below, but the buffer flags are
 # applied to PLAYER_CMD much later.
-BUFFER_SECS="$(_resolve_cfg_string buffer_secs || echo 0)"
-case "$BUFFER_SECS" in ''|*[!0-9]*) BUFFER_SECS=0 ;; esac
+BUFFER_SECS="$(_resolve_cfg_string buffer_secs || echo 10)"
+case "$BUFFER_SECS" in ''|*[!0-9]*) BUFFER_SECS=10 ;; esac
 unset -f _resolve_cfg_string
 FAV_FILE="${ACE_FAVORITES:-${XDG_CONFIG_HOME:-$HOME/.config}/aceman/favorites}"
 
