@@ -20,4 +20,9 @@
           </button>
         </div>
         <pre id="logs-viewer" style="display:none"></pre>
+        <!-- Paused hint lives BELOW the viewer, shown via an adjacent-sibling
+             CSS rule off #logs-viewer.viewer-paused. Deliberately not inside
+             the <pre>: anything in the scroll flow shifts the log text the
+             instant a click auto-pauses, negating a last-line selection. -->
+        <div id="logs-paused-hint">⏸&nbsp;&nbsp;Paused — click outside to resume</div>
       </div>

@@ -10,13 +10,16 @@
 // chasing off, that N-second head start persists for the life of the
 // stream rather than being chased back to the edge.
 //
-// 0 (the default) means the feature is OFF — play immediately, exactly
-// as before. These helpers are pure: bufferedAhead() reads a
+// 0 means the feature is OFF — play immediately. The out-of-the-box
+// default is 10 s (BUFFER_DEFAULT): a sensible cushion so a short
+// hiccup doesn't stall. These helpers are pure: bufferedAhead() reads a
 // TimeRanges-shaped object {length, end(i)} but touches no real DOM,
 // so the gating policy is exercised by deterministic unit tests.
 
 export const BUFFER_MIN = 0;
 export const BUFFER_MAX = 60;
+// Default pre-roll when the user hasn't chosen one; labelled "(default)".
+export const BUFFER_DEFAULT = 10;
 
 // Normalise an arbitrary stored string / slider value to an integer in
 // [0, maxVal]. NaN, null, junk → 0 (disabled). maxVal defaults to the
@@ -47,8 +50,10 @@ export function bufferReady(buffered, currentTime, target) {
   return bufferedAhead(buffered, currentTime) >= target;
 }
 
-// Human label for the slider's live read-out: "Off" at 0, else "N s".
+// Human label for the slider's live read-out: "Off" at 0, "N s (default)"
+// at the default (10 s), else "N s".
 export function bufferLabel(value, maxVal = BUFFER_MAX) {
   const n = clampBuffer(value, maxVal);
-  return n === 0 ? 'Off' : `${n} s`;
+  if (n === 0) return 'Off';
+  return n === BUFFER_DEFAULT ? `${n} s (default)` : `${n} s`;
 }

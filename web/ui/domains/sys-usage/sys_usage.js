@@ -1,5 +1,5 @@
 // System-usage domain. When enabled via the Lifecycle toggle, polls host
-// CPU + GPU utilisation (10 s rolling average, computed broker-side) every
+// CPU + GPU utilisation (20 s rolling average, computed broker-side) every
 // 3 s and paints the row below the memory cells. Each cell hides itself
 // when its figure is unavailable (no CPU baseline yet, or the GPU vendor
 // doesn't expose a busy metric — e.g. Intel i915 without intel_gpu_top).

@@ -59,11 +59,18 @@ export function gpuPipelineLabel() {
   const h264Ok = _gpuCaps && (_gpuCaps.nvidia || (_gpuCaps.vaapi && _gpuCaps.vaapi.h264_enc));
   const backend = _gpuCaps && _gpuCaps.nvidia ? 'nvidia'
                 : _gpuCaps && _gpuCaps.vaapi ? 'vaapi' : null;
+  // The CPU path still decodes + re-encodes with libx264 (and deinterlaces)
+  // when this ffmpeg has an H.264 decoder — which it does in the container.
+  // Only a codec-stripped ffmpeg falls back to a true -c:v copy remux.
+  const cpuReencode = !!(_gpuCaps && _gpuCaps.cpu_reencode);
   const parts = [];
+  let reencoding = true;
   if (s.encode && backend && h264Ok) parts.push(backend === 'nvidia' ? 'NVENC' : 'VA-API');
-  else if (s.encode)                 parts.push('CPU x264');
-  else                               parts.push('remux (no re-encode)');
-  if (s.deinterlace)     parts.push('deint bwdif');
+  else if (s.encode || cpuReencode)  parts.push('CPU x264');
+  else                             { parts.push('remux (no re-encode)'); reencoding = false; }
+  // Deinterlace is automatic (bwdif=deint=interlaced) on every re-encoding
+  // path; a remux has nothing to filter. "auto" = only interlaced frames.
+  if (reencoding)         parts.push('deint auto');
   if (s.scale && backend) parts.push('↑' + s.scale + 'p ewa_lanczos');
   return parts.join(' · ');
 }
@@ -113,7 +120,6 @@ export async function initGpuCard() {
   // Restore saved settings.
   const s = _loadGpuSettings();
   encodeEl.checked             = !!s.encode && h264Ok;
-  $('gpu-deinterlace').checked = !!s.deinterlace;
   $('gpu-upscale').value       = s.scale || '';
   _refreshUpscaleNote();
 
@@ -121,14 +127,12 @@ export async function initGpuCard() {
   const persist = () => {
     _saveGpuSettings({
       encode:      $('gpu-encode').checked,
-      deinterlace: $('gpu-deinterlace').checked,
       scale:       $('gpu-upscale').value,
     });
     _refreshUpscaleNote();
     notifyRestartNeeded();   // GPU change applies on next stream start
   };
   $('gpu-encode').onchange      = persist;
-  $('gpu-deinterlace').onchange = persist;
   $('gpu-upscale').onchange     = persist;
 }
 

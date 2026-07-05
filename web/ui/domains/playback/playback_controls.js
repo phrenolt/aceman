@@ -59,7 +59,7 @@ function initBufferSlider() {
   const bufOut    = $('playback-buffer-out');
   if (!bufSlider) return;
   bufSlider.max = '60';
-  const storedVal = parseInt(localStorage.getItem(KEYS.PLAYBACK_BUFFER) || '0', 10);
+  const storedVal = parseInt(localStorage.getItem(KEYS.PLAYBACK_BUFFER) || '10', 10);
   bufSlider.value = String(Math.min(Math.max(storedVal, 0), 60));
   if (bufOut) bufOut.textContent = bufferLabel(bufSlider.value, 60);
   // Seed the server from localStorage on load so the aceman CLI's

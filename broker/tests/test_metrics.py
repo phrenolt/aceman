@@ -140,7 +140,7 @@ class RollingWindowTests(unittest.TestCase):
         self.assertEqual(out["cpu"], 20.0)             # (10+30)/2
         self.assertEqual(out["gpu"], 30.0)             # (20+40)/2
         self.assertEqual(out["gpu_kind"], "amd")
-        self.assertEqual(out["window_secs"], 10)
+        self.assertEqual(out["window_secs"], 20)
 
     def test_usage_ignores_none_cpu_baseline(self):
         with mock.patch.object(metrics, "_gpu_kind", return_value=None), \
@@ -152,8 +152,8 @@ class RollingWindowTests(unittest.TestCase):
         self.assertIsNone(out["gpu_kind"])
 
     def test_window_prunes_old_samples(self):
-        # Two samples 20 s apart: the first must fall out of the 10 s window.
-        clock = iter([100.0, 120.0])
+        # Two samples 30 s apart: the first must fall out of the 20 s window.
+        clock = iter([100.0, 130.0])
         with mock.patch.object(metrics, "_gpu_kind", return_value="nvidia"), \
              mock.patch.object(metrics, "_cpu_pct", side_effect=[5.0, 90.0]), \
              mock.patch.object(metrics, "_gpu_pct", side_effect=[5.0, 90.0]), \

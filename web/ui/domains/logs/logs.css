@@ -39,20 +39,37 @@
     font: .72rem ui-monospace, monospace;
     max-height: 24em; overflow: auto;
     white-space: pre-wrap; word-break: break-all;
+    /* Never let the browser re-anchor the scroll when content changes.
+       We follow the bottom deliberately (scrollTop = scrollHeight on
+       refresh); without this, pausing/refreshing near the bottom makes
+       the browser snap to the true bottom, eat the padding under the last
+       line, and drag a fresh text selection off by a line. */
+    overflow-anchor: none;
   }
-  /* Sticky banner shown when the viewer is auto-paused by a click inside it. */
-  #logs-viewer.viewer-paused::before {
-    content: "⏸  Paused — click outside to resume";
-    display: block;
-    position: sticky;
-    top: 0;
-    background: rgba(50,40,8,.95);
-    color: var(--acc);
+  /* Paused indicator. CRITICAL: nothing here may touch the viewer's scroll
+     flow or size. The .viewer-paused class is toggled on mousedown — the
+     instant the user starts selecting — and the viewer auto-follows the
+     bottom, so any inserted-in-flow element (the old ::before banner) makes
+     the browser re-anchor / scroll to the new bottom, eating the padding
+     gap under the last line and dragging the selection off by a line.
+     So: the viewport itself only gets a border-colour swap (same 1px width
+     → zero layout change), and the text hint lives in a SIBLING below the
+     <pre>, shown via the adjacent-sibling rule — never inside the scroll. */
+  #logs-viewer.viewer-paused {
+    border-color: var(--acc);
+  }
+  #logs-paused-hint {
+    display: none;
     font: .72rem system-ui, sans-serif;
+    color: var(--acc);
     text-align: center;
-    padding: .2rem .4rem;
-    margin-bottom: .45rem;
-    border-radius: 3px;
+    padding: .25rem .4rem;
+    margin: .3rem 0 0;
+    background: rgba(50,40,8,.55);
     border: 1px solid rgba(181,146,56,.3);
+    border-radius: 3px;
     letter-spacing: .02em;
+  }
+  #logs-viewer.viewer-paused + #logs-paused-hint {
+    display: block;
   }

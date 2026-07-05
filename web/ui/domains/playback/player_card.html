@@ -11,7 +11,7 @@
       <div class="field" id="buffer-field"
            title="Seconds of buffer so a short network/engine hiccup doesn't stall the video. Applies to BOTH the browser player and the external player (VLC/mpv). Higher = starts later but stalls less. Off (0) does NOT mean zero — the external player just keeps its own caching setting (e.g. VLC's saved Network caching). On LIVE streams: browser and VLC play a few seconds behind live and get the full buffer; mpv only loads ahead, so it can't buffer more than the few seconds the engine has ready. Applies on the next Play / Restart.">
         <label class="field-label" for="playback-buffer">Buffer</label>
-        <input type="range" id="playback-buffer" min="0" max="60" step="1" value="0"
+        <input type="range" id="playback-buffer" min="0" max="60" step="1" value="10"
                style="flex:1; min-width:0">
         <output id="playback-buffer-out"
                 style="min-width:4ch; text-align:right">Off</output>

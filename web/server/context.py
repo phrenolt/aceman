@@ -73,3 +73,11 @@ class RouteContext:
     # data class and tests can stub it with a lambda.
     pending_play_cid_peek: Callable[[], str] = field(
         default_factory=lambda: (lambda: ""))
+    # True when this web build's ffmpeg has an H.264 decoder, so the CPU
+    # proxy path decodes + re-encodes (libx264 + auto-deinterlace) rather
+    # than a bare -c:v copy remux. Surfaced on /api/gpu/status so the
+    # frontend's pipeline label can say "CPU x264 · deint auto" instead of
+    # the misleading "remux (no re-encode)". Callable because the ffmpeg
+    # probe runs just after this context is built.
+    cpu_reencode: Callable[[], bool] = field(
+        default_factory=lambda: (lambda: False))
