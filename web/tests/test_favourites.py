@@ -44,37 +44,37 @@ class FavStoreNameValidationTests(unittest.TestCase):
 
     def test_rejects_tab(self):
         with self.assertRaises(ValueError):
-            self.store.add("Sky\tSports", CID_A)
+            self.store.add("Acme\tSports", CID_A)
 
     def test_rejects_control_byte(self):
         with self.assertRaises(ValueError):
-            self.store.add("Sky\x07Sports", CID_A)
+            self.store.add("Acme\x07Sports", CID_A)
 
     def test_rejects_zero_width_space(self):
-        # Spoofing aid — looks like "Sky Sports" but is a distinct
+        # Spoofing aid — looks like "Acme Sports" but is a distinct
         # identifier.
         with self.assertRaises(ValueError):
-            self.store.add("Sky​Sports", CID_A)
+            self.store.add("Acme​Sports", CID_A)
 
     def test_rejects_bidi_override(self):
         with self.assertRaises(ValueError):
-            self.store.add("Sky‮EVIL", CID_A)
+            self.store.add("Acme‮EVIL", CID_A)
 
     def test_rejects_bom(self):
         with self.assertRaises(ValueError):
-            self.store.add("﻿Sky Sports", CID_A)
+            self.store.add("﻿Acme Sports", CID_A)
 
     def test_accepts_cyrillic(self):
-        # The bug we fixed: "Матч ТВ" was rejected because the original
+        # The bug we fixed: "Пример ТВ" was rejected because the original
         # forbidden-set regex had stray invisible bidi codepoints in
         # the source.
-        self.store.add("Матч ТВ", CID_A)
+        self.store.add("Пример ТВ", CID_A)
         rows = self.store.list()
-        self.assertEqual(rows[0]["name"], "Матч ТВ")
+        self.assertEqual(rows[0]["name"], "Пример ТВ")
 
     def test_accepts_cjk(self):
-        self.store.add("体育频道", CID_A)
-        self.assertEqual(self.store.list()[0]["name"], "体育频道")
+        self.store.add("示例频道", CID_A)
+        self.assertEqual(self.store.list()[0]["name"], "示例频道")
 
     def test_accepts_emoji(self):
         # Emoji aren't bidi/spoofing chars; they're regular glyphs.
@@ -117,26 +117,26 @@ class FavStoreUniquenessTests(unittest.TestCase):
         self._tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self._tmp.cleanup)
         self.store = FavStore(pathlib.Path(self._tmp.name) / "db.sqlite")
-        self.store.add("Sky Sports", CID_A)
+        self.store.add("Acme Sports", CID_A)
 
     def test_duplicate_cid_different_name_raises(self):
         with self.assertRaises(DuplicateCidError) as ctx:
-            self.store.add("Sky Sports HD", CID_A)
-        self.assertEqual(ctx.exception.existing_name, "Sky Sports")
+            self.store.add("Acme Sports HD", CID_A)
+        self.assertEqual(ctx.exception.existing_name, "Acme Sports")
 
     def test_same_name_same_cid_is_noop(self):
         # Re-saving with the exact same name + cid should not raise.
-        self.store.add("Sky Sports", CID_A)
+        self.store.add("Acme Sports", CID_A)
         self.assertEqual(len(self.store.list()), 1)
 
     def test_rename_to_existing_name_raises(self):
         self.store.add("Sports HD", CID_B)
         with self.assertRaises(ValueError):
-            self.store.rename("Sports HD", "Sky Sports")
+            self.store.rename("Sports HD", "Acme Sports")
 
     def test_rename_validates_new_name(self):
         with self.assertRaises(ValueError):
-            self.store.rename("Sky Sports", "Sky\tSports")
+            self.store.rename("Acme Sports", "Acme\tSports")
 
     def test_rename_missing_raises_keyerror(self):
         with self.assertRaises(KeyError):

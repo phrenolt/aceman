@@ -50,13 +50,13 @@ class FavRoutesTests(unittest.TestCase):
     def test_add_then_list(self):
         resp = fav_routes.add_fav(
             _req("POST", "/api/favs",
-                 body={"name": "Sky Sports", "cid": CID_A}),
+                 body={"name": "Acme Sports", "cid": CID_A}),
             self.ctx)
         self.assertEqual(resp.status, 200)
         import json
         rows = json.loads(
             fav_routes.list_favs(_req("GET", "/api/favs"), self.ctx).body)
-        self.assertEqual(rows[0]["name"], "Sky Sports")
+        self.assertEqual(rows[0]["name"], "Acme Sports")
         self.assertEqual(rows[0]["cid"], CID_A)
 
     def test_add_validates_name(self):

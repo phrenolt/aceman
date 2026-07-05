@@ -62,14 +62,14 @@ CTRL = re.compile(r"[\x00-\x1f\x7f]")
 # Written as \uXXXX escapes (NOT raw glyphs) so the source stays readable
 # — the original literal had two stray U+0020 spaces hidden in a row of
 # invisible bidi codepoints, which is what made Cyrillic-with-space names
-# like "Матч ТВ" fail validation.
+# like "Пример ТВ" fail validation.
 #
 # Bands:
 #   \t          our column separator in the shell favourites file
 #   \x00-\x1f   C0 controls + DEL adjacent
 #   \x7f-\x9f   DEL + C1 (terminal-escape territory)
 #   ​-‏   ZWSP/ZWNJ/ZWJ + LRM/RLM (invisible-char spoofing
-#                  e.g. "Sky​Sports" ≠ "SkySports" visually)
+#                  e.g. "Acme​Sports" ≠ "AcmeSports" visually)
 #    -‮  line/paragraph separators + bidi overrides
 #                  (LRE/RLE/PDF/LRO/RLO — visual reorder)
 #   ⁠          word joiner (zero-width invisible)

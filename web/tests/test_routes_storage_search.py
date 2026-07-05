@@ -100,9 +100,9 @@ class SearchRouteTests(unittest.TestCase):
                                    "translated_name": ""}]
         ctx = RouteContext(search_proxy=sp)
         resp = search_routes.search(
-            _req("GET", "/api/search", query={"q": "Sky"}), ctx)
+            _req("GET", "/api/search", query={"q": "Acme"}), ctx)
         self.assertEqual(resp.status, 200)
-        sp.search.assert_called_once_with("Sky")
+        sp.search.assert_called_once_with("Acme")
         self.assertIn("results", json.loads(resp.body))
 
 

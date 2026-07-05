@@ -589,6 +589,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
+        # Same anti-MIME-sniffing stance as the HTML response: a JSON
+        # body must never be reinterpreted as something executable.
+        self.send_header("X-Content-Type-Options", "nosniff")
         self.end_headers()
         self.wfile.write(body)
 
@@ -1711,6 +1714,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.send_header("Content-Type", resp.content_type)
         self.send_header("Content-Length", str(len(resp.body)))
         self.send_header("Cache-Control", "no-store")
+        # See _send_json — router responses get the same nosniff pin.
+        self.send_header("X-Content-Type-Options", "nosniff")
         for k, v in resp.extra_headers.items():
             self.send_header(k, v)
         self.end_headers()
@@ -2003,6 +2008,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def do_PATCH(self):  # noqa: N802
         if not self._host_allowed():
             return self._error(421, "host header not in allow-list")
+        # Cross-origin PATCH always preflights (it's not a CORS-simple
+        # method), so this gate is redundant today — kept for symmetry
+        # with POST/DELETE so a future copy-paste of this handler can't
+        # silently drop the defense.
+        if self._cross_site():
+            return self._error(403, "cross-site request refused")
         if not self._content_type_json():
             return self._error(415, "content-type must be application/json")
         try:

@@ -80,7 +80,7 @@ class TerminalSafeTests(unittest.TestCase):
     def test_letter_from_arbitrary_script_kept(self):
         # Cyrillic, CJK, Arabic letters must pass through unchanged —
         # we only block control bytes and spoofing chars, not scripts.
-        for ch in ("Матч", "中文", "العربية"):
+        for ch in ("Пример", "中文", "مثال"):
             with self.subTest(ch=ch):
                 self.assertEqual(_terminal_safe(ch), ch)
 
@@ -100,7 +100,7 @@ class DisplayDangerousTests(unittest.TestCase):
         self.assertEqual(out, "ok[31mEVIL[0m")
 
     def test_strips_zero_width_chars(self):
-        # ZWSP makes "SkySports" and "Sky​Sports" indistinguishable
+        # ZWSP makes "AcmeSports" and "Acme​Sports" indistinguishable
         # visually but distinct as identifiers — spoofing aid.
         for cp in (0x200b, 0x200c, 0x200d, 0x2060, 0xfeff):
             with self.subTest(cp=cp):
