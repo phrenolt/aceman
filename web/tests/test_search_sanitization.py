@@ -73,7 +73,7 @@ class CleanQueryTests(unittest.TestCase):
 
 class CleanNameTests(unittest.TestCase):
     def test_keeps_letters_any_script(self):
-        for s in ("Sky Sports", "Матч ТВ", "体育频道", "العربية"):
+        for s in ("Acme Sports", "Пример ТВ", "示例频道", "مثال"):
             with self.subTest(s=s):
                 self.assertEqual(SearchProxy._clean_name(s), s)
 
@@ -162,8 +162,8 @@ class SearchEndToEndTests(unittest.TestCase):
     def test_returns_sanitised_names(self):
         # Upstream can dump bidi overrides into names; we strip them.
         items = [{"content_id": GOOD_CID,
-                  "name": "Sky‮EVIL",
-                  "translated_name": "Sky"}]
+                  "name": "Acme‮EVIL",
+                  "translated_name": "Acme"}]
         self._set_response(items)
         out = self.sp.search("q")
         self.assertEqual(len(out), 1)

@@ -69,5 +69,30 @@ class Router:
             m = regex.match(path)
             if m:
                 pp = {n: urllib.parse.unquote(m.group(n)) for n in params}
+                # The `[^/]+` segment pattern runs against the still
+                # percent-ENCODED path, so `..%2Fetc%2Fpasswd` matches it
+                # and only becomes `../etc/passwd` in the unquote above.
+                # Refuse decoded params shaped like a traversal so the
+                # "handlers never see traversal strings" promise holds
+                # even for a future route that splices a param into a
+                # filesystem path. A bare interior slash stays allowed —
+                # favourite names are free text ("Alpha/Beta" is legal and the
+                # UI addresses it as Alpha%2FBeta), and an interior slash can
+                # only descend, never climb or go absolute.
+                if any(self._traversal_risk(v) for v in pp.values()):
+                    return None
                 return fn, pp
         return None
+
+    @staticmethod
+    def _traversal_risk(value: str) -> bool:
+        """True when a decoded path param could climb out of, or
+        absolutely repoint, a directory it might one day be joined to:
+        a bare dot segment, a leading separator (pathlib's `/` operator
+        REPLACES the base when the right side is absolute), or a `..`
+        component anywhere between separators."""
+        if value in (".", ".."):
+            return True
+        if value.startswith(("/", "\\")):
+            return True
+        return any(part == ".." for part in re.split(r"[/\\]", value))

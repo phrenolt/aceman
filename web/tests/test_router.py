@@ -41,9 +41,9 @@ class RouterMatchingTests(unittest.TestCase):
 
     def test_param_captured(self):
         self.r.delete("/api/favs/{name}", _ok)
-        match = self.r.resolve("DELETE", "/api/favs/Sky%20Sports")
+        match = self.r.resolve("DELETE", "/api/favs/Acme%20Sports")
         self.assertIsNotNone(match)
-        self.assertEqual(match[1], {"name": "Sky Sports"})
+        self.assertEqual(match[1], {"name": "Acme Sports"})
 
     def test_param_does_not_cross_slash(self):
         """The critical anti-traversal invariant."""
@@ -52,6 +52,39 @@ class RouterMatchingTests(unittest.TestCase):
         # sees the literal slashes, and {name} must NOT swallow them.
         self.assertIsNone(self.r.resolve("DELETE",
                                          "/api/favs/foo/bar"))
+
+    def test_param_refuses_encoded_traversal(self):
+        """Percent-ENCODED slashes pass the `[^/]+` segment pattern
+        (the regex runs before unquoting), so the decoded-param check
+        in resolve() must refuse anything shaped like a traversal —
+        a handler must never receive a string that could climb out of
+        (or absolutely repoint) a directory it gets joined to."""
+        self.r.delete("/api/favs/{name}", _ok)
+        for encoded in ("..%2Fetc%2Fpasswd",   # → ../etc/passwd
+                        "..%2f..%2fsystem",    # lower-case hex
+                        "%2e%2e",              # → ..
+                        "%2e",                 # → .
+                        "a%2F..%2Fb",          # → a/../b (interior ..)
+                        "a%5Cb%5C..",          # → a\b\.. (backslash)
+                        "%2Fetc%2Fpasswd",     # → /etc/passwd (absolute)
+                        ):
+            self.assertIsNone(
+                self.r.resolve("DELETE", f"/api/favs/{encoded}"),
+                f"traversal param must be refused: {encoded!r}")
+
+    def test_param_allows_benign_decoded_values(self):
+        """The traversal refusal must not over-block. Favourite names
+        are free text: spaces and even interior slashes ("Alpha/Beta",
+        addressed by the UI as Alpha%2FBeta) are legal and must still
+        resolve — an interior slash can only descend, never climb."""
+        self.r.delete("/api/favs/{name}", _ok)
+        for encoded, decoded in (("Acme%20Sports%202", "Acme Sports 2"),
+                                 ("Alpha%2FBeta", "Alpha/Beta"),
+                                 ("24%2F7%20Demo", "24/7 Demo"),
+                                 ("a.b..c", "a.b..c")):  # dots, not segments
+            match = self.r.resolve("DELETE", f"/api/favs/{encoded}")
+            self.assertIsNotNone(match, f"benign param over-blocked: {encoded!r}")
+            self.assertEqual(match[1], {"name": decoded})
 
     def test_param_does_not_match_empty(self):
         self.r.delete("/api/favs/{name}", _ok)
