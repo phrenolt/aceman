@@ -1,100 +1,39 @@
-// Search domain. The unified Watch input doubles as a search box: when
-// the value isn't a cid / acestream:// URL we treat it as a free-text
-// query against /api/search (search-ace.stream), render paginated
-// results, and let each result be played or saved as a favourite.
+// Search domain. A dedicated search box (#search-input) queries
+// /api/search (search-ace.stream), renders paginated results, and lets
+// each result be played (prepopulates the Watch input + auto-plays) or
+// saved as a favourite. It lives in the Search tab of the library card.
 //
 // The pure query logic (shouldSearch / normaliseQuery / buildSearchUrl)
 // and pagination live in lib/ and are unit-tested; this module is the
 // DOM wiring around them.
 //
-// All cross-module deps are forward imports from sibling domains:
-// hideHistorySection (history), allFavs / instaSave / updateSaveButton
-// (favourites), play + alignSearchToInput (playback).
+// Cross-module deps are forward imports: allFavs / instaSave /
+// updateSaveButton + findFavouriteByCid (favourites), play + refreshClearButton
+// (playback).
 
 import { $, showError, showBusy, hideBusy } from '../../shared/dom.js';
 import { api } from '../../shared/api.js';
-import { parseId } from '../playback/index.js';
 import { debounce } from './lib/debounce.js';
 import { paginate } from '../../lib/pagination.js';
 import { shouldSearch, normaliseQuery, buildSearchUrl } from './lib/search_query.js';
 import { findFavouriteByCid } from '../favourites/index.js';
-import { hideHistorySection } from '../history/index.js';
 import { allFavs, instaSave, updateSaveButton } from '../favourites/index.js';
-import { play } from '../playback/index.js';
-import { alignSearchToInput } from '../playback/index.js';
+import { play, refreshClearButton } from '../playback/index.js';
+import { buildSavedBadge } from '../library/index.js';
+import { setIcon } from '../../shared/icons.js';
+import { pageSize } from '../../lib/library_settings.js';
 
 let lastSearchQuery = '';
-// Pagination of search results. Mirrors the favourites pager — same
-// 5-per-page convention applied to the upstream's MAX_RESULTS=50 cap.
+// Pagination of search results. Page size is the shared Library setting.
 let allSearchResults = [];
 let searchPage = 0;
-const SEARCH_PAGE_SIZE = 5;
 
 // 600ms trailing-edge debounce — long enough that mid-word keystrokes don't
 // fire a request, short enough to feel responsive after a pause.
 export const onSearchInput = debounce(() => runSearch(), 600);
 
-// Show/hide the search section based on what's in the unified input.
-// We treat the input as a free-text search query iff it's NOT a 40-hex
-// cid and NOT an acestream:// URL — parseId() returns non-null for
-// both of those cases. Results stay visible during playback so the
-// operator can hunt for a new channel while one is already on screen
-// (the previous hide-while-playing behaviour was friction once the
-// Watch input was the ONLY search affordance — there was no other
-// way to look for something new without stopping first).
-//
-// When the section is hidden we also blank the "N results" status
-// pill in the card title; otherwise the stale count lingers after
-// the user stops playback of a search-clicked stream (cid in input,
-// no results table on screen — confusing).
-export function refreshSearchSection() {
-  const sec = $('search-section');
-  if (!sec) return;
-  const v = $('cid-input').value || '';
-  const isCid = parseId(v) !== null;
-  const wantSearch = !isCid && shouldSearch(normaliseQuery(v));
-  sec.style.display = wantSearch ? '' : 'none';
-  if (wantSearch) hideHistorySection();
-  if (!wantSearch) {
-    const status = $('search-status');
-    if (status) status.textContent = '';
-  }
-}
-
-// Show/hide the explicit ✕ clear button next to the Watch input.
-// Always visible (when there's a value) instead of relying on the
-// native type=search × — Firefox hides that on blur, mobile
-// browsers often skip it entirely, and a discoverable single click
-// matters more than the native pixels.
-export function refreshClearButton() {
-  const btn = $('cid-clear');
-  if (!btn) return;
-  btn.style.display = $('cid-input').value ? '' : 'none';
-}
-
-export function clearCidInput() {
-  const input = $('cid-input');
-  if (!input) return;
-  input.value = '';
-  input.focus();
-  updateSaveButton();
-  refreshSearchSection();
-  refreshClearButton();
-  onSearchInput();
-}
-
 export async function runSearch() {
-  // The unified Watch input doubles as the search input. parseId
-  // catches cid / acestream:// values so we don't search those.
-  const raw = $('cid-input').value || '';
-  if (parseId(raw) !== null) {
-    lastSearchQuery = '';
-    $('search-results').innerHTML = '';
-    $('search-status').textContent = '';
-    refreshSearchSection();
-    return;
-  }
-  const q = normaliseQuery(raw);
+  const q = normaliseQuery($('search-input').value || '');
   lastSearchQuery = q;
   $('search-results').innerHTML = '';
   $('search-status').textContent = '';
@@ -102,10 +41,8 @@ export async function runSearch() {
   console.debug('[search] query', { len: q.length, query: q });
   if (!shouldSearch(q)) {
     console.debug('[search] skipped (too short)');
-    refreshSearchSection();
     return;
   }
-  refreshSearchSection();
   $('search-status').textContent = 'searching…';
   const t0 = performance.now();
   try {
@@ -145,17 +82,17 @@ export function searchPageNext() { searchPage++; renderSearchResults(); }
 export function renderSearchResults() {
   const list = $('search-results');
   list.innerHTML = '';
-  const p = paginate(allSearchResults.length, searchPage, SEARCH_PAGE_SIZE);
+  const size = pageSize();
+  const p = paginate(allSearchResults.length, searchPage, size);
   searchPage = p.page;
   for (const r of p.slice(allSearchResults)) list.appendChild(renderSearchRow(r));
   const pager = $('search-pager');
   if (pager) {
-    pager.style.display = allSearchResults.length > SEARCH_PAGE_SIZE ? '' : 'none';
+    pager.style.display = allSearchResults.length > size ? '' : 'none';
     $('search-prev').disabled = !p.hasPrev;
     $('search-next').disabled = !p.hasNext;
     $('search-info').textContent = p.label();
   }
-  requestAnimationFrame(alignSearchToInput);
 }
 
 export function renderSearchRow(r) {
@@ -186,6 +123,7 @@ export function renderSearchRow(r) {
 
   wrap.onclick = async () => {
     $('cid-input').value = r.cid;
+    refreshClearButton();
     showBusy('Starting…');
     try { await play({ name: primary, altName: alt }); } finally { hideBusy(); }
   };
@@ -199,35 +137,26 @@ export function renderSearchRow(r) {
     }).catch(() => {});
   };
 
-  const saveBtn = document.createElement('button');
-  // If this cid is already saved, render the button in its "saved" state
-  // from the start — disabled, with the existing favourite name surfaced
-  // if it doesn't match what we'd have called it. Saves a click + alert
-  // round-trip and tells the user where to look in their favourites list.
+  row.appendChild(wrap);
+  // Already saved → show the "Saved as: …" badge (double-click opens it in
+  // Favourites). Otherwise a ★ button that saves it.
   const existing = findFavouriteByCid(allFavs, r.cid);
-  saveBtn.classList.add('icon-btn');
   if (existing) {
-    markSearchRowSaved(saveBtn, existing.name, primary);
+    row.appendChild(buildSavedBadge(existing.name));
   } else {
-    saveBtn.textContent = '★';
+    const saveBtn = document.createElement('button');
+    saveBtn.classList.add('icon-btn');
+    setIcon(saveBtn, 'star');
     saveBtn.title = 'Add to favourites (pick a name: English, Original, or custom)';
     saveBtn.setAttribute('aria-label', 'Add to favourites');
     saveBtn.onclick = () => instaSave(r, saveBtn, primary);
+    row.appendChild(saveBtn);
   }
-
-  row.appendChild(wrap);
-  row.appendChild(saveBtn);
   return row;
 }
 
-// Flip a search-row's save button into the "already in favourites" state.
-// Keeps the same single-glyph footprint as the Save state (avoids
-// shifting siblings) and surfaces the favourite name only as a tooltip.
-export function markSearchRowSaved(btn, favName, rowPrimary) {
-  btn.disabled = true;
-  btn.classList.add('icon-btn', 'has-tooltip');
-  btn.textContent = '★';
-  btn.title = favName;
-  btn.setAttribute('aria-label', btn.title);
-  btn.onclick = null;
+// Flip a just-clicked ★ save button into the "Saved as: …" badge in place
+// (called by instaSave after a successful save). Replaces the button node.
+export function markSearchRowSaved(btn, favName) {
+  btn.replaceWith(buildSavedBadge(favName));
 }

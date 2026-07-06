@@ -12,16 +12,27 @@ export function initPlaybackControls() {
   initBufferSlider();
 }
 
+// Stats visibility is a preference (statsHidden) AND a precondition: the
+// stats line / "Display Stats" button are meaningful only while the
+// in-browser <video> is actually on screen. #now-playing is also shown
+// for external playback (no in-browser window), so without the video
+// check the button leaks in with no player behind it.
+let statsHidden = localStorage.getItem(KEYS.STATS_HIDDEN) === '1';
+
+export function refreshStatsVisibility() {
+  const s = $('pb-video-status');
+  const b = $('show-stats-btn');
+  const v = $('pb-video');
+  if (!s || !b) return;
+  const videoShown = !!v && v.style.display !== 'none';
+  if (!videoShown) { s.style.display = 'none'; b.style.display = 'none'; return; }
+  s.style.display = statsHidden ? 'none' : '';
+  b.style.display = statsHidden ? '' : 'none';
+}
+
 // Stats line toggle — click to hide, "Display Stats" button to restore.
 function initStatsToggle() {
-  let statsHidden = localStorage.getItem(KEYS.STATS_HIDDEN) === '1';
-  const applyStatsVis = () => {
-    const s = $('pb-video-status');
-    const b = $('show-stats-btn');
-    if (!s || !b) return;
-    s.style.display = statsHidden ? 'none' : '';
-    b.style.display = statsHidden ? '' : 'none';
-  };
+  const applyStatsVis = refreshStatsVisibility;
   applyStatsVis();
   const pbStatus = $('pb-video-status');
   if (pbStatus) {

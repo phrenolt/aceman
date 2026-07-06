@@ -5,10 +5,10 @@ Mirrors the aceman shell script: probe the engine, request a stream via
 /ace/getstream?id=<40hex>&format=json, validate the response, hand back the
 playback URL, and stop the session on demand via command_url.
 
-Favourites live in SQLite when the sqlite3 stdlib module is importable;
-otherwise the frontend stores them in browser localStorage. Either way the
-backend never accepts engine-controlled bytes into the favourites store —
-content IDs are validated to ^[A-Fa-f0-9]{40}$ before any persistence.
+Favourites live in SQLite (the sqlite3 stdlib module is always present in
+our container). The backend never accepts engine-controlled bytes into the
+favourites store — content IDs are validated to ^[A-Fa-f0-9]{40}$ before any
+persistence.
 
 Run:
     python3 aceman_web.py
@@ -54,11 +54,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-try:
-    import sqlite3
-    SQLITE_AVAILABLE = True
-except ImportError:
-    SQLITE_AVAILABLE = False
+import sqlite3
 
 
 # ---------- package imports -----------------------------------------------
@@ -435,7 +431,7 @@ INDEX_HTML = _load_index_template()
 class Handler(http.server.BaseHTTPRequestHandler):
     # Set on the class by main() before serving.
     engine: str = DEFAULT_ENGINE
-    store: FavStore | None = None  # None means browser-storage mode
+    store: FavStore | None = None  # set at startup; always sqlite-backed
     history_store: HistoryStore | None = None
     engine_mgr: "EngineBrokerClient | None" = None
     config: "Config | None" = None
@@ -2046,8 +2042,6 @@ def main(argv: list[str] | None = None) -> int:
                    help=f"sqlite db path (default: {DEFAULT_DB})")
     p.add_argument("--config", default=str(DEFAULT_CONFIG),
                    help=f"server-side config json path (default: {DEFAULT_CONFIG})")
-    p.add_argument("--no-sqlite", action="store_true",
-                   help="force browser-only storage even if sqlite3 is available")
     # Container name + launcher path are owned by the broker, not the web
     # frontend (they're frozen into the broker's env at service start).
     # The web only needs to know how to reach the broker.
@@ -2098,14 +2092,9 @@ def main(argv: list[str] | None = None) -> int:
 
     Handler.engine = args.engine.rstrip("/")
     Handler.allowed_hosts = _build_allowed_hosts(args.host, args.port)
-    if args.no_sqlite or not SQLITE_AVAILABLE:
-        Handler.store = None
-        mode_msg = "browser localStorage (sqlite3 unavailable)" \
-            if not SQLITE_AVAILABLE else "browser localStorage (--no-sqlite)"
-    else:
-        Handler.store = FavStore(pathlib.Path(args.db))
-        Handler.history_store = HistoryStore(pathlib.Path(args.db))
-        mode_msg = f"sqlite at {args.db}"
+    Handler.store = FavStore(pathlib.Path(args.db))
+    Handler.history_store = HistoryStore(pathlib.Path(args.db))
+    mode_msg = f"sqlite at {args.db}"
 
     Handler.config = Config(pathlib.Path(args.config))
     # All podman-touching ops go through the broker (host-side allow-list
