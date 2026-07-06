@@ -22,20 +22,22 @@
 
 <!--@include domains/favourites/favname_modal.html-->
 
+<!--@include domains/library/library_settings_modal.html-->
+
 <!--@include domains/wordmark/header.html-->
 
 <!--@include shared/notice_host.html-->
 
 <div class="main">
   <!-- Source order matches narrow-screen display order:
-       Watch → Favourites → Player+Engine → Setup. The wide-screen
-       layout uses grid-template-areas in style.css to lift
-       Favourites out as a sticky left column while keeping the same
-       row order on the right side. -->
+       Watch → Library (Search/History/Favourites) → Player+Engine → Setup.
+       On ultra-wide screens style.css lifts the Library card out as a
+       sticky right column beside the Watch card, keeping the same row
+       order on the left side. -->
 
 <!--@include domains/playback/play_card.html-->
 
-<!--@include domains/favourites/favs_card.html-->
+<!--@include domains/library/library_card.html-->
 
   <div class="top-row" id="top-row">
 <!--@include domains/playback/player_card.html-->

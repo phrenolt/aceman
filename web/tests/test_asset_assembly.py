@@ -50,7 +50,7 @@ class AssetAssemblyTests(unittest.TestCase):
     def test_headline_content_from_each_partial_present(self):
         # One distinctive token per extracted partial — a dropped partial
         # (wrong path, bad cut) takes its token with it.
-        for token in ('id="favs-card"', 'id="play-card"', 'id="player-card"',
+        for token in ('id="library-card"', 'id="play-card"', 'id="player-card"',
                       'id="engine-card"', 'id="reset-modal"', 'id="restart-modal"',
                       'id="install-modal"', 'id="favname-modal"', 'id="busy-modal"',
                       'id="confirm-modal"', 'id="logs-viewer"', 'id="gpu-card"',
@@ -59,7 +59,7 @@ class AssetAssemblyTests(unittest.TestCase):
             self.assertIn(token, self.html, f"missing html: {token}")
         for token in ('.aceman-select-trigger', '.fav ', '.logs-tab', '.notice-host',
                       '#dbg-overlay', '#playback-buffer', '#play-btn', '.favname-opt',
-                      '.aceman ', '#image-log', '.live-dot'):
+                      '.aceman ', '#image-log', '.live-dot', '.library-tabs'):
             self.assertIn(token, self.css, f"missing css: {token}")
 
 

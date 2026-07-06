@@ -13,12 +13,13 @@
 // and is unit-tested; this module is the DOM + broker wiring.
 //
 // Forward imports from sibling domains: favourites (allFavs, loadFavs,
-// updateSaveButton, browserFavs), search (refreshSearchSection,
-// refreshClearButton), detection (player/browser lists), gpu (param
+// updateSaveButton), detection (player/browser lists), gpu (param
 // builder + encode label). Plus the generic shared/notice component and
-// the shared/runtime flags (mode, noLocalDesktop). This domain owns the live
-// stream state (current, livePlaybackTarget, cfg) + the search/history
-// layout helper (alignSearchToInput, used by those sibling cards).
+// the shared/runtime flag (noLocalDesktop). This domain owns the live
+// stream state (current, livePlaybackTarget, cfg) AND the Watch input
+// (#cid-input) — a read-only display of the playing Ace ID that the user
+// double-clicks to edit / pastes into to play (clearCidInput /
+// refreshClearButton live here).
 
 import { $, showError, showConfirm, showBusy, hideBusy } from '../../shared/dom.js';
 import { api } from '../../shared/api.js';
@@ -39,11 +40,11 @@ import { describeMoveButton } from './lib/move_stream_button.js';
 import { describeEngineToggle } from './lib/engine/engine_start_stop_toggle.js';
 import { resolveDisplayName } from './lib/playback_display_name.js';
 import { describePlayButtonGate } from './lib/engine/play_button_gate.js';
-import { allFavs, loadFavs, updateSaveButton, browserFavs } from '../favourites/index.js';
-import { refreshSearchSection, refreshClearButton } from '../search/index.js';
+import { allFavs, loadFavs, updateSaveButton } from '../favourites/index.js';
 import { detectedPlayers, detectedBrowsers, _currentBrowserName } from './detection.js';
 import { buildGpuParams, gpuPipelineLabel } from '../gpu/index.js';
-import { mode, noLocalDesktop } from '../../shared/runtime.js';
+import { noLocalDesktop } from '../../shared/runtime.js';
+import { refreshStatsVisibility } from './playback_controls.js';
 
 // The active stream, just enough to drive the Save button: we no longer
 // own the session (the host shell does via acestream:// dispatch), so
@@ -63,40 +64,24 @@ export let livePlaybackTarget = '';
 export let cfg = {};
 export function setCfg(value) { cfg = value; }
 
-// Aligns the search-results / history dropdowns (and the play-hint) to
-// the Watch input's box — they position themselves relative to the
-// play-row, which this domain owns. Used by search, history, the engine
-// play-gate, and the init ResizeObserver.
-export function alignSearchToInput() {
-  const playRow = document.querySelector('.play-row');
-  if (!playRow) return;
-  const section = $('search-section');
-  const historySec = $('history-section');
-  const hint = $('play-hint');
-  const card = (section || hint || historySec) &&
-    (section || hint || historySec).closest('.card');
-  if (!card) return;
-  const rowRect = playRow.getBoundingClientRect();
-  const cardRect = card.getBoundingClientRect();
-  const cs = getComputedStyle(card);
-  const padLeft = parseFloat(cs.paddingLeft);
-  const padRight = parseFloat(cs.paddingRight);
-  const cardContentW = cardRect.width - padLeft - padRight;
-  const rawMl = Math.max(0, rowRect.left - cardRect.left - padLeft);
-  const w = Math.min(rowRect.width, Math.max(0, cardContentW - rawMl)) + 'px';
-  const ml = rawMl + 'px';
-  if (section && section.style.display !== 'none') {
-    section.style.width = w;
-    section.style.marginLeft = ml;
-  }
-  if (historySec && historySec.style.display !== 'none') {
-    historySec.style.width = w;
-    historySec.style.marginLeft = ml;
-  }
-  if (hint) {
-    hint.style.width = w;
-    hint.style.marginLeft = ml;
-  }
+// The Watch input (#cid-input) belongs to this domain now: a read-only
+// display of the playing Ace ID, editable only on double-click and a
+// paste-to-play target. These helpers own its ✕ clear button and the
+// programmatic clear used by Stop.
+export function refreshClearButton() {
+  const btn = $('cid-clear');
+  if (!btn) return;
+  // Visibility (not display) so the reserved slot never reflows the row.
+  btn.style.visibility = $('cid-input').value ? 'visible' : 'hidden';
+}
+
+export function clearCidInput() {
+  const input = $('cid-input');
+  if (!input) return;
+  input.value = '';
+  updateSaveButton();
+  refreshClearButton();
+  refreshDeviceStream();   // a cleared field hides the device QR
 }
 
 // Reminder that a setting change (buffer / GPU) only applies on the next
@@ -164,6 +149,7 @@ function startInBrowserPlayback(cid) {
   const v = $('pb-video');
   const status = $('pb-video-status');
   v.style.display = '';
+  refreshStatsVisibility();
   status.textContent = 'Connecting to engine…';
   status.className = 'gate-hint';
 
@@ -203,6 +189,13 @@ function startInBrowserPlayback(cid) {
     // Stop mpegts.js seeking to the live edge — that chasing would
     // erase the very cushion the slider asks us to hold.
     playerCfg.liveBufferLatencyChasing = false;
+  }
+  // Quiet mpegts.js's info/debug chatter (the "[MSEController] Received
+  // Initialization Segment …" lines etc). We keep our own errors/warnings.
+  if (window.mpegts.LoggingControl) {
+    window.mpegts.LoggingControl.enableInfo = false;
+    window.mpegts.LoggingControl.enableDebug = false;
+    window.mpegts.LoggingControl.enableVerbose = false;
   }
   try {
     mpegtsPlayer = window.mpegts.createPlayer(playerCfg);
@@ -279,6 +272,7 @@ function startInBrowserPlayback(cid) {
   // the engine stalls or slows before the video actually stutters.
   const renderStatus = () => {
     if (buffering) return;            // pre-roll counter owns the line until release
+    if (_stalled) return;             // stall note owns the line until playback resumes
     const base = mediaInfoText || 'Playing';
     const ahead = bufferedAhead(v.buffered, v.currentTime);
     const mbps = speedMbps != null ? ' · ' + speedMbps.toFixed(1) + ' Mbps' : '';
@@ -312,25 +306,36 @@ function startInBrowserPlayback(cid) {
 // a stream error can clear it (otherwise it'd keep painting over them).
 let _bufferHealthTimer = null;
 
-// Stall watchdog: if the video enters "waiting" for 8 s without recovering
-// (ffmpeg died, proxy dropped), show an error instead of spinning forever.
+// Stall watchdog. Short buffering hiccups are normal on live streams and
+// almost always recover on their own, so we're deliberately tolerant:
+// only after a long stall (20 s) do we surface a gentle, non-alarming
+// note, and the moment playback resumes we wipe it. The buffer-health
+// ticker keeps running throughout (renderStatus no-ops while _stalled) so
+// recovery restores the normal line automatically.
 let _stallTimer = null;
+let _stalled = false;
+// The active renderStatus closure, stashed so recovery can repaint the
+// normal status line from module scope.
+let _renderStatusFn = null;
 function _clearStall() {
-  if (!_stallTimer) return;
-  clearTimeout(_stallTimer);
-  _stallTimer = null;
+  if (_stallTimer) { clearTimeout(_stallTimer); _stallTimer = null; }
+  if (_stalled) {
+    _stalled = false;
+    if (_renderStatusFn) _renderStatusFn();   // restore the normal line
+  }
 }
 function _armStall() {
-  if (_stallTimer) return;
+  if (_stallTimer || _stalled) return;
   _stallTimer = setTimeout(() => {
     _stallTimer = null;
-    _stopBufferHealth();
+    _stalled = true;
     const s = $('pb-video-status');
-    if (s) { s.textContent = 'Stream stalled — proxy disconnected or stream ended'; s.className = 'gate-hint warn'; }
-  }, 8000);
+    if (s) { s.textContent = 'Buffering — the stream paused, still trying…'; s.className = 'gate-hint'; }
+  }, 20000);
 }
 
 function _stopBufferHealth() {
+  _renderStatusFn = null;
   if (!_bufferHealthTimer) return;
   clearInterval(_bufferHealthTimer);
   _bufferHealthTimer = null;
@@ -338,6 +343,7 @@ function _stopBufferHealth() {
 
 function _startBufferHealth(render) {
   _stopBufferHealth();
+  _renderStatusFn = render;          // let stall-recovery repaint from module scope
   render();                          // paint immediately, don't wait 1 s
   _bufferHealthTimer = setInterval(render, 1000);
 }
@@ -406,6 +412,7 @@ function stopInBrowserPlayback() {
     v.removeAttribute('src');
     v.load();
     v.style.display = 'none';
+    refreshStatsVisibility();
     // Restore controls in case we stopped mid pre-roll (where they were
     // stripped) — the next play starts from a clean default.
     v.controls = true;
@@ -429,21 +436,6 @@ export function setTabTitle(name) {
   document.title = name ? `${base} - ${name}` : base;
 }
 
-// Show/hide the now-playing id chip off the current stream. The chip
-// SEES the full id (the title only shows the name), and clicking it does
-// the same as clicking the title — see copyPlayingCid.
-function renderNowPlayingId() {
-  const el = $('now-playing-id');
-  if (!el) return;
-  if (current && current.cid) {
-    el.textContent = 'Ace ID: ' + current.cid;
-    el.style.display = '';
-  } else {
-    el.textContent = '';
-    el.style.display = 'none';
-  }
-}
-
 // One reused, auto-dismissing top toast for the small copy confirmations
 // (Ace ID, device link). Single id → only ever one banner, one timer.
 let _toastTimer = null;
@@ -453,23 +445,18 @@ function _toast(message) {
   _toastTimer = setTimeout(() => dismissNotice('aceman-toast'), 2500);
 }
 
-// Shared click handler for the playback title AND the now-playing id chip:
-// copy the playing cid to the clipboard and put it back in the Watch box
-// (so searching never loses sight of what's playing), with a brief top
-// notice. External playback has no video card, so the title is the path
-// that matters there; both routes behave identically.
+// Click handler for the playback title: copy the playing cid to the
+// clipboard, with a brief top notice. The Watch input already displays
+// the id, so this is purely the copy affordance.
 export function copyPlayingCid() {
   if (!current || !current.cid) return;
   const cid = current.cid;
-  $('cid-input').value = cid;
-  refreshClearButton();
-  refreshDeviceStream();
   if (navigator.clipboard && navigator.clipboard.writeText) {
     navigator.clipboard.writeText(cid)
       .then(() => _toast('Saved Ace ID to clipboard'))
-      .catch(() => _toast('Ace ID put back in the box (clipboard blocked)'));
+      .catch(() => _toast('Could not copy the Ace ID (clipboard blocked)'));
   } else {
-    _toast('Ace ID put back in the box (clipboard unavailable)');
+    _toast('Clipboard unavailable');
   }
 }
 
@@ -528,7 +515,6 @@ export async function play(opts = {}) {
   saveLastPlay(localStorage, { cid, name: displayName, sub: displaySub });
   setNowPlayingName(displayName, displaySub);
   $('now-playing').style.display = 'block';
-  renderNowPlayingId();
   updateSaveButton();
   refreshPlaybackMoveButton();
 
@@ -541,19 +527,15 @@ export async function play(opts = {}) {
   }
 
   // Stamp last_played so the "watched N days ago" badge updates without a
-  // refresh. Browser-mode is local; sqlite-mode goes through the server.
-  // Best-effort — Play must not fail on a bookkeeping write.
-  if (mode === 'browser') {
-    browserFavs.touchCid(cid);
-  } else {
-    api('/api/favs/touch', {
-      method: 'POST', body: JSON.stringify({ cid }),
+  // refresh, and record the play in watch history. Both go through the
+  // server (sqlite). Best-effort — Play must not fail on a bookkeeping write.
+  api('/api/favs/touch', {
+    method: 'POST', body: JSON.stringify({ cid }),
+  }).catch(() => {});
+  if (displayName) {
+    api('/api/history', {
+      method: 'POST', body: JSON.stringify({ cid, name: displayName }),
     }).catch(() => {});
-    if (displayName) {
-      api('/api/history', {
-        method: 'POST', body: JSON.stringify({ cid, name: displayName }),
-      }).catch(() => {});
-    }
   }
   loadFavs();
 
@@ -894,7 +876,8 @@ function refreshPlayButton() {
   // host player and re-fires acestream://, which relaunches VLC/mpv with
   // the current buffer_secs. Restart is how a changed buffer/GPU setting
   // takes effect.
-  if (rbtn) rbtn.style.display = livePlaybackTarget ? '' : 'none';
+  // Visibility (not display) so the reserved slot never reflows the row.
+  if (rbtn) rbtn.style.visibility = livePlaybackTarget ? 'visible' : 'hidden';
   // Nothing live → no stream to restart, so retire the reminder.
   if (!livePlaybackTarget) dismissNotice('restart-needed');
 }
@@ -923,13 +906,11 @@ function refreshPlaybackMoveButton() {
   const livePip = $('playback-live');
   if (livePip) livePip.style.display = livePlaybackTarget ? '' : 'none';
   refreshPlayButton();
-  // Canonical recompute point for live state. Refresh the search
-  // section visibility (depends on input value) AND the ✕ clear
-  // button (depends on input value too) from here so anything that
+  // Canonical recompute point for live state. Refresh the ✕ clear
+  // button (depends on the input value) from here so anything that
   // changes cid-input programmatically — play(), play-on-load,
-  // search-row click — gets these updated even if no `input` event
-  // fired.
-  refreshSearchSection();
+  // search/history/favourite click — updates it even if no `input`
+  // event fired.
   refreshClearButton();
   if (!btn || !sel) return;
   const selectedLabel = sel.selectedIndex >= 0
@@ -1082,7 +1063,6 @@ async function maybePickUpPendingPlay(s) {
   // "play in Brave" target doesn't prompt the user mid-link-click.
   $('cid-input').value = cid;
   refreshClearButton();
-  refreshSearchSection();
   try { await play({ skipConfirm: true }); }
   catch (_) { /* surfaced via showError */ }
 }
@@ -1137,9 +1117,9 @@ export async function refreshEngineStatus() {
       current = { cid, name: displayName, altName: displaySub };
       setTabTitle(displayName);
       $('cid-input').value = cid;
+      refreshClearButton();
       setNowPlayingName(displayName, displaySub);
       $('now-playing').style.display = 'block';
-      renderNowPlayingId();
       updateSaveButton();
     }
     refreshPlaybackMoveButton();
@@ -1423,7 +1403,6 @@ function refreshPlayGate() {
       'Playing on another device — open the link or scan the QR below on '
       + 'that device. Or pick another player to play here.';
     hint.className = 'gate-hint';
-    requestAnimationFrame(alignSearchToInput);
     return;
   }
   if (bufferField) bufferField.style.display = '';
@@ -1431,7 +1410,6 @@ function refreshPlayGate() {
   btn.disabled = view.disabled;
   hint.textContent = view.hint.text;
   hint.className = view.hint.className;
-  requestAnimationFrame(alignSearchToInput);
 }
 
 export async function toggleEngine() {

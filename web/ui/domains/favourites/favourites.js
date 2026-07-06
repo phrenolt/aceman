@@ -1,20 +1,19 @@
 // Favourites domain. The saved-channel list with its own search box +
 // pager, inline rename, delete, and the "save the playing stream" flow
 // (the ★ Save button and the name-picker modal). Backed by sqlite via
-// /api/favs when the server has it, else a localStorage store
-// (createBrowserFavouritesStore) — `mode` selects which.
+// /api/favs.
 //
 // The pure bits (name de-duping, last-watched label, save-button view,
-// browser store, lookup) live in lib/favourites/ and lib/ and are
-// unit-tested; this module is the DOM wiring.
+// lookup) live in lib/favourites/ and lib/ and are unit-tested; this
+// module is the DOM wiring.
 //
 // markSearchRowSaved + refreshSearchResultsIfAny are forward imports from
 // the search domain (favourites changes flip per-result-row state). Also
-// imports current + play from playback and mode from shared/runtime.
+// imports current + play from playback.
 
 import { $, showError, showBusy, hideBusy, showConfirm } from '../../shared/dom.js';
 import { api } from '../../shared/api.js';
-import { createBrowserFavouritesStore } from './lib/browser_favourites_store.js';
+import { setIcon } from '../../shared/icons.js';
 import { daysSinceLabel } from './lib/last_watched_label.js';
 import { uniqueFavouriteName } from './lib/favourite_names.js';
 import { describeSaveButton } from './lib/save_favourite_button.js';
@@ -24,26 +23,18 @@ import { paginate } from '../../lib/pagination.js';
 import { runModal } from '../../lib/modal.js';
 import { markSearchRowSaved, refreshSearchResultsIfAny } from '../search/index.js';
 import { current, play } from '../playback/index.js';
-import { mode } from '../../shared/runtime.js';
-
-// Browser-side favourites store (used when the server has no sqlite3).
-// Implementation lives in lib/favourites/ and is unit-tested.
-export const browserFavs = createBrowserFavouritesStore();
+import { loadHistory } from '../history/index.js';
+import { buildSavedBadge } from '../library/index.js';
+import { pageSize, removeFromHistoryOnSave } from '../../lib/library_settings.js';
 
 // In-memory cached list + filter/page state. allFavs is the full set from
-// whichever store; the renderer slices it by search and page.
+// the store; the renderer slices it by search and page.
 export let allFavs = [];
 let favSearch = '';
 let favPage = 0;
-const FAV_PAGE_SIZE = 10;
-
-function closeFavMenus() {
-  document.querySelectorAll('.fav-menu').forEach(m => { m.hidden = true; });
-}
-document.addEventListener('click', closeFavMenus);
 
 export async function loadFavs() {
-  allFavs = (mode === 'sqlite') ? await api('/api/favs') : browserFavs.list();
+  allFavs = await api('/api/favs');
   renderFavs();
   // Favourites set might have changed (saved/renamed/deleted in another
   // tab), so re-evaluate the Save-as-favourite button vs. star indicator.
@@ -60,7 +51,7 @@ function filteredFavs() {
 
 function renderFavs() {
   const filtered = filteredFavs();
-  const p = paginate(filtered.length, favPage, FAV_PAGE_SIZE);
+  const p = paginate(filtered.length, favPage, pageSize());
   favPage = p.page;
 
   const list = $('fav-list');
@@ -124,48 +115,24 @@ function renderFavRow(f) {
     }).catch(() => {});
   };
 
-  // ⋮ context menu — Rename / Delete
-  const menuWrap = document.createElement('div');
-  menuWrap.className = 'fav-menu-wrap';
+  // Direct row actions — rename (pencil) + delete (trash, shared with history).
+  const renameBtn = document.createElement('button');
+  renameBtn.className = 'icon-btn';
+  setIcon(renameBtn, 'pencil');
+  renameBtn.title = 'Rename';
+  renameBtn.setAttribute('aria-label', 'Rename favourite');
+  renameBtn.onclick = e => { e.stopPropagation(); startEditName(f, name); };
 
-  const menuBtn = document.createElement('button');
-  menuBtn.className = 'icon-btn fav-menu-btn';
-  menuBtn.textContent = '☰';
-  menuBtn.title = 'More options';
-  menuBtn.setAttribute('aria-label', 'More options');
-
-  const menu = document.createElement('div');
-  menu.className = 'aceman-select-listbox fav-menu';
-  menu.hidden = true;
-
-  const optRename = document.createElement('div');
-  optRename.className = 'aceman-select-option';
-  optRename.textContent = 'Rename';
-  optRename.onclick = e => { e.stopPropagation(); menu.hidden = true; startEditName(f, name); };
-
-  const sep = document.createElement('div');
-  sep.className = 'fav-menu-sep';
-
-  const optDelete = document.createElement('div');
-  optDelete.className = 'aceman-select-option fav-menu-delete';
-  optDelete.textContent = 'Delete';
-  optDelete.onclick = e => { e.stopPropagation(); menu.hidden = true; deleteFav(f.name); };
-
-  menu.appendChild(optRename);
-  menu.appendChild(sep);
-  menu.appendChild(optDelete);
-  menuWrap.appendChild(menuBtn);
-  menuWrap.appendChild(menu);
-
-  menuBtn.onclick = e => {
-    e.stopPropagation();
-    const wasHidden = menu.hidden;
-    closeFavMenus();
-    menu.hidden = !wasHidden;
-  };
+  const delBtn = document.createElement('button');
+  delBtn.className = 'icon-btn';
+  setIcon(delBtn, 'trash');
+  delBtn.title = 'Delete';
+  delBtn.setAttribute('aria-label', 'Delete favourite');
+  delBtn.onclick = e => { e.stopPropagation(); deleteFav(f.name); };
 
   row.appendChild(wrap);
-  row.appendChild(menuWrap);
+  row.appendChild(renameBtn);
+  row.appendChild(delBtn);
   return row;
 }
 
@@ -204,13 +171,9 @@ function startEditName(f, span) {
 }
 
 async function renameFav(oldName, newName) {
-  if (mode === 'sqlite') {
-    await api('/api/favs/' + encodeURIComponent(oldName), {
-      method: 'PATCH', body: JSON.stringify({ name: newName }),
-    });
-  } else {
-    browserFavs.rename(oldName, newName);
-  }
+  await api('/api/favs/' + encodeURIComponent(oldName), {
+    method: 'PATCH', body: JSON.stringify({ name: newName }),
+  });
   await loadFavs();
 }
 
@@ -221,11 +184,7 @@ async function deleteFav(name) {
     confirmText: 'Delete',
     danger: true,
   }))) return;
-  if (mode === 'sqlite') {
-    await api('/api/favs/' + encodeURIComponent(name), { method: 'DELETE' });
-  } else {
-    browserFavs.delete(name);
-  }
+  await api('/api/favs/' + encodeURIComponent(name), { method: 'DELETE' });
   loadFavs();
 }
 
@@ -252,17 +211,14 @@ export async function instaSave(r, btn, rowPrimary) {
   if (!name) return;
   btn.disabled = true;
   try {
-    if (mode === 'sqlite') {
-      await api('/api/favs', {
-        method: 'POST', body: JSON.stringify({ name, cid: r.cid }),
-      });
-    } else {
-      browserFavs.add(name, r.cid);
-    }
+    await api('/api/favs', {
+      method: 'POST', body: JSON.stringify({ name, cid: r.cid }),
+    });
     await loadFavs();
     // Persistent "saved" state — no revert. Mirrors the same row state
     // the user gets if they re-search and see the result again later.
     markSearchRowSaved(btn, name, rowPrimary);
+    maybeDropFromHistory(r.cid);
   } catch (e) {
     const existingName = extractExistingName(e);
     if (existingName) {
@@ -277,9 +233,31 @@ export async function instaSave(r, btn, rowPrimary) {
   }
 }
 
+// When the "remove from history on save" setting is on, drop the just-saved
+// channel from watch history and refresh the (possibly visible) panel.
+function maybeDropFromHistory(cid) {
+  if (!removeFromHistoryOnSave()) return;
+  api('/api/history/' + encodeURIComponent(cid), { method: 'DELETE' }).catch(() => {});
+  loadHistory();
+}
+
 export function updateSaveButton() {
   const btn = $('save-btn');
   if (!btn) return;
+  const ind = $('save-indicator');
+  // Already a favourite → show the "<name> ★" mustard glyph (double-click
+  // opens it in Favourites), not a Save button.
+  const existing = current ? findFavouriteByCid(allFavs, current.cid) : null;
+  if (current && existing) {
+    btn.style.display = 'none';
+    if (ind) {
+      ind.innerHTML = '';
+      ind.appendChild(buildSavedBadge(existing.name));
+      ind.style.display = '';
+    }
+    return;
+  }
+  if (ind) { ind.style.display = 'none'; ind.innerHTML = ''; }
   const view = describeSaveButton(current, allFavs);
   btn.style.display = view.visible ? '' : 'none';
   btn.textContent = view.text;
@@ -367,13 +345,9 @@ export async function saveFav() {
   const name = await showFavNameModal(english, original);
   if (!name) return;
   try {
-    if (mode === 'sqlite') {
-      await api('/api/favs', {
-        method: 'POST', body: JSON.stringify({ name, cid: current.cid }),
-      });
-    } else {
-      browserFavs.add(name, current.cid);
-    }
+    await api('/api/favs', {
+      method: 'POST', body: JSON.stringify({ name, cid: current.cid }),
+    });
   } catch (e) {
     // Server / store had a stale-cache duplicate the pre-check missed
     // (e.g. another tab added it between loads).
@@ -386,4 +360,5 @@ export async function saveFav() {
     return;
   }
   loadFavs();
+  maybeDropFromHistory(current.cid);
 }

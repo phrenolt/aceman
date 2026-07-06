@@ -1,0 +1,193 @@
+  /* Library card: the combined Search / History / Favourites browse
+     surface. One segmented control of three icon toggles sits centered
+     under the "Library" card-label; the active toggle glows mustard with
+     a black glyph. */
+  /* Tabs centred in the card with the cog pinned to the right content
+     edge, both on one row. The equal 1fr side columns keep the tabs
+     centred; the balanced top/bottom spacing (card padding-top above,
+     margin below) vertically centres the row between the top border and
+     the search field. */
+  .library-tabs-row {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: center;
+    margin: 0 0 .9rem;
+  }
+  .library-tabs { grid-column: 2; }
+  .library-tabs {
+    display: inline-flex;
+    border: 1px solid #444;
+    border-radius: 999px;
+    background: #1a1a1a;
+  }
+  .library-tab {
+    margin: 0;
+    /* .5rem vertical padding + a 1.4rem icon makes the control's height
+       line up with the adjacent search input (.5rem padding + 1.4em line
+       + 1px borders). */
+    padding: .5rem 1.15rem;
+    line-height: 0;
+    background: transparent;
+    border: none;
+    border-left: 1px solid #333;
+    border-radius: 0;
+    /* Inline SVG icons recolour via currentColor: bright by default,
+       mustard on hover, mustard + glow when active. */
+    color: #cfcfcf;
+    transition: color .15s, background .15s, box-shadow .15s;
+  }
+  .library-tab svg { width: 1.4rem; height: 1.4rem; display: block; }
+  .library-tab:first-child { border-left: none; border-radius: 999px 0 0 999px; }
+  .library-tab:last-child  { border-radius: 0 999px 999px 0; }
+  .library-tab:hover:not(:disabled) { color: var(--hover); }
+
+  /* ⚙ settings — a round button sharing the tabs row, at the right
+     content edge. Stretches to the tabs' height and stays circular via
+     aspect-ratio, so it never exceeds the search-field width. */
+  .library-cog {
+    grid-column: 3;
+    justify-self: end;
+    align-self: stretch;
+    aspect-ratio: 1;
+    margin: 0;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg);
+    border: 1px solid #444;
+    border-radius: 50%;
+    color: var(--mut);
+    font-size: 1.5rem;
+    line-height: 1;
+  }
+  .library-cog:hover:not(:disabled) { color: var(--hover); border-color: var(--hover); }
+  .library-tab:focus-visible { outline: 2px solid var(--hover); outline-offset: 2px; }
+  .library-tab.active {
+    color: var(--acc);
+    background: rgba(181, 146, 56, .14);
+    box-shadow: 0 0 8px rgba(181, 146, 56, .6);
+  }
+
+  /* Book / star glyphs inlined into the settings label, reusing the tab
+     icons so they match exactly. Sized to the surrounding text. */
+  .inline-glyph {
+    width: 1.05em;
+    height: 1.05em;
+    vertical-align: -.18em;
+    display: inline-block;
+  }
+
+  /* Themed number field for "items per page": the native <input
+     type=number> chrome (light box + OS spinner) clashes with the dark
+     cards, so we skin the field like the text inputs and replace the
+     spinner with our own ▲/▼ buttons. */
+  .number-field {
+    display: inline-flex;
+    align-items: stretch;
+    width: 3.5rem;   /* fits 3 digits + the stepper column */
+    background: #1a1a1a;
+    border: 1px solid #333;
+    border-radius: 4px;
+    overflow: hidden;   /* steppers are clipped to the field, never spill out */
+  }
+  .number-field:focus-within {
+    border-color: var(--hover);
+    box-shadow: 0 0 0 2px rgba(181, 146, 56, .22);
+  }
+  .number-field input[type=number] {
+    flex: 1;
+    min-width: 0;
+    padding: .4rem .45rem;   /* defines the field height; steppers stretch to it */
+    background: transparent;
+    color: var(--fg);
+    border: none;
+    outline: none;
+    font: inherit;
+    -moz-appearance: textfield;   /* hide Firefox spinner */
+  }
+  .number-field input[type=number]::-webkit-outer-spin-button,
+  .number-field input[type=number]::-webkit-inner-spin-button {
+    -webkit-appearance: none;     /* hide WebKit/Blink spinner */
+    margin: 0;
+  }
+  /* Stacked up/down buttons as a grid column inside the field box. Each
+     holds an SVG chevron centred via place-items (grid rows split the
+     height exactly 50/50). */
+  .number-steppers {
+    display: grid;
+    grid-template-rows: 1fr 1fr;   /* exact 50/50, no flex remainder skew */
+    flex: 0 0 1.1rem;
+    border-left: 1px solid #333;
+  }
+  /* Scoped under .number-field to outrank `.install-opt button` (which
+     otherwise forces display:block, width:100% and big padding on these). */
+  .number-field .number-step {
+    width: auto;
+    min-height: 0;
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    min-width: 0;
+    overflow: hidden;
+    display: grid;
+    place-items: center;   /* dead-centre the chevron both axes */
+    background: #222;
+    color: var(--mut);
+    border: none;
+    border-radius: 0;
+  }
+  .number-field .number-step:first-child { border-bottom: 1px solid #333; }
+  .number-field .number-step:hover:not(:disabled) { background: #2a2a2a; color: var(--acc); }
+  .number-field .number-step:active { background: rgba(181, 146, 56, .18); }
+
+  /* Search box inside its panel matches the favourites search box. */
+  #search-input { font-size: .9rem; }
+  #search-status { display: block; margin: .35rem 0 .1rem; }
+  #history-search { font-size: .9rem; }
+
+  /* Clear-all sits centered, below the history list. */
+  #history-clear-row { display: flex; justify-content: center; margin-top: .5rem; }
+  #history-clear { font-size: .75rem; padding: .15rem .5rem; }
+
+  /* Each tab's search field is full-width with the ✕ overlaid inside, so
+     the input, the pager and the rows below all share the same left/right
+     bounds (the ✕ column is always reserved via visibility). */
+  .field-wrap { position: relative; margin: .5rem 0; }
+  .field-input { width: 100%; padding-right: 2rem; }
+  .field-clear {
+    position: absolute; right: .4rem; top: 50%; transform: translateY(-50%);
+    margin: 0; padding: .2rem; min-width: auto; line-height: 0;
+    background: none; border: none; color: var(--mut);
+  }
+  .field-clear:hover:not(:disabled) { color: var(--hover); background: none; border: none; }
+  .field-clear svg { width: .95rem; height: .95rem; display: block; }
+
+  /* Pager arrows: glyph-only « », sized like the row action buttons (2rem)
+     and flush to the panel edges. The glyphs are pinned to the .5rem grid
+     (text-align + padding) so « lines up with the row/search left content
+     and » lines up with the trash / row right edge. */
+  /* Divider between the nav buttons and the rows below, matching the
+     setup-row dividers. */
+  .pager { padding: 0 0 .4rem; border-bottom: 1px solid #333; margin-bottom: .3rem; }
+  .pager button { font-size: 1.15rem; line-height: 1; padding: .3rem .5rem; min-width: 2rem; margin: 0; }
+  .pager button:first-child { text-align: left; }
+  .pager button:last-child  { text-align: right; }
+  .pager button:hover:not(:disabled) { color: var(--hover); border-color: var(--hover); }
+
+  /* Saved indicator: the favourite's "<name> ★" in mustard (plain glyph,
+     not a button). Double-click opens it in the Favourites tab; full
+     context lives in the tooltip. Shared by rows + the Watch card. */
+  .saved-badge {
+    flex-shrink: 0;
+    max-width: 60%;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: .3rem;
+    color: var(--acc);
+    font-size: .8rem;
+  }
+  .saved-badge-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* Star matches the trash-can icon size. */
+  .saved-badge-star svg { width: 1rem; height: 1rem; display: block; }

@@ -245,9 +245,9 @@
      leaves the second column visually offset. */
   /* All major cards are direct children of .main so we can position
      them with grid-template-areas. Source order = narrow-screen
-     order: top-row → search → playback → favourites → setup. The
-     wide-screen media query below promotes favourites to its own
-     left column spanning every row. */
+     order: Watch → Library → top-row → Setup. The wide-screen media
+     query below promotes the Library card to its own sticky RIGHT
+     column spanning every row beside the Watch card. */
   .main { display: grid; gap: 1rem; grid-template-columns: 1fr; min-width: 0; }
   .main > .card { margin: 0; min-width: 0; }
   /* Three-up row across the top of the right column: Engine / Playback /
@@ -270,12 +270,19 @@
   #play-row-wrap { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: .5rem; margin: .5rem 0; }
   /* play-row is nowrap internally; parent handles vertical margin. */
   .play-row { flex-wrap: nowrap; justify-content: center; margin: 0; }
-  #cid-input { width: 41ch; max-width: 41ch; flex: 0 1 auto; min-width: 12ch; padding-top: .3rem; padding-bottom: .3rem; }
-  /* Symmetric small padding keeps glyphs centred while staying visually tight. */
-  #cid-clear    { padding: .3rem .15rem; }
+  /* Fixed-width wrapper holds the field + its inward ✕ overlay, so the row
+     never resizes when Play reveals the ↺ / Save controls. */
+  .cid-field-wrap { position: relative; flex: 0 0 auto; width: 41ch; max-width: 100%; min-width: 0; }
+  /* Vertical padding matches the library search field (.5rem) so the two
+     inputs are the same height. */
+  #cid-input { width: 100%; box-sizing: border-box; padding: .5rem 1.9rem .5rem .5rem; }
+  /* ↺ slot is reserved (visibility-toggled in JS, not display) so showing/
+     hiding it doesn't shift the row. */
   #restream-btn { padding: .3rem .15rem; }
-  /* Match vertical padding of the adjacent icon buttons. */
-  #save-btn { padding: .3rem .8rem; }
+  /* Save always drops to its own centred line so it never reflows the input row. */
+  #save-btn { padding: .3rem .8rem; flex-basis: 100%; }
+  /* The "already saved" glyph indicator shares that own-line, centred slot. */
+  #save-indicator { flex-basis: 100%; display: flex; justify-content: center; }
 
   /* Corner label: a small "fieldset legend"-style tag in the top-left
      of a card. Sits half-overlapping the card border so it reads as a
@@ -334,23 +341,24 @@
     body { max-width: 1700px; }
   }
   @media (min-width: 1150px) {
-    /* Wide-screen layout: favourites get their own left column spanning
-       every row of the right side (top-row → search → play → setup),
-       and stick in view as the user scrolls through the longer
-       right-hand column. */
-    .main { grid-template-columns: minmax(300px, 1fr) 2fr;
+    /* Wide-screen layout: the Library card (Search/History/Favourites)
+       gets its own right column spanning every row of the left side
+       (play → top-row → setup) and sticks in view as the user scrolls
+       through the longer left-hand column. */
+    .main { grid-template-columns: 2fr minmax(300px, 1fr);
             grid-template-areas:
-              "favs play"
-              "favs top-row"
-              "favs setup";
+              "play    library"
+              "top-row library"
+              "setup   library";
             align-items: start; }
-    #play-card   { grid-area: play; }
-    #top-row     { grid-area: top-row; }
-    #favs-card   { grid-area: favs; position: sticky; top: 1rem; z-index: 2; }
-    #setup-card  { grid-area: setup; }
+    #play-card    { grid-area: play; }
+    #top-row      { grid-area: top-row; }
+    #library-card { grid-area: library; position: sticky; top: 1rem; z-index: 2; }
+    #setup-card   { grid-area: setup; }
   }
 
 /*@include domains/favourites/favourites.css*/
+/*@include domains/library/library.css*/
 
   /* Setup & tools card: structured rows + danger zone */
   .setup-row { padding: .6rem 0; border-top: 1px solid #333; }
@@ -385,7 +393,10 @@
   .gate-hint { color: var(--mut); font-size: .8rem; margin-left: .5rem; }
   #play-hint { margin-left: 0; text-align: center; display: block; }
   .gate-hint.warn { color: var(--err); }
-  #pb-video-status { cursor: pointer; transition: opacity .15s; }
+  /* The status line rewrites itself every second; opt it out of scroll
+     anchoring so those tiny reflows don't spam "Scroll anchoring was
+     disabled…" and nudge the viewport. */
+  #pb-video-status { cursor: pointer; transition: opacity .15s; overflow-anchor: none; }
   #pb-video-status:hover { opacity: .45; }
 
   /* Now-playing channel label — lives inside the Playback card-label.

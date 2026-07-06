@@ -16,13 +16,8 @@ def get_storage_mode(req: Request, ctx: RouteContext) -> Response:
     if ctx.search_proxy:
         sources.append(SearchProxy.BASE)
     return Response.json(200, {
-        "mode": "sqlite" if ctx.store else "browser",
         "engine": ctx.engine,
         "search_sources": sources,
-        # Surfaced as the tooltip on the SQLITE badge in the
-        # favourites header so the user can see exactly where their
-        # data lives without diving into config files.
-        "favorites_path": str(ctx.db_path) if ctx.store else None,
         # Frontend hides Linux-desktop-only affordances (App launcher,
         # acestream:// scheme handler) when this is true: the page is
         # served to a browser on another host (WSL, a Lima VM, a remote

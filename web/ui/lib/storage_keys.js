@@ -7,7 +7,6 @@
 // everywhere.
 
 export const KEYS = Object.freeze({
-  FAVORITES: 'aceman.favorites',
   LAST_PLAY: 'aceman.lastPlay',
   GLOW: 'aceman.acemanGlow',
   SHOW_ALL_BROWSERS: 'aceman.showAllBrowsers',
@@ -15,4 +14,7 @@ export const KEYS = Object.freeze({
   RESTARTED_AT: 'aceman.restartedAt',             // sessionStorage breadcrumb
   GPU_ACCEL: 'aceman.gpuAccel',                   // GPU acceleration settings JSON
   STATS_HIDDEN: 'aceman.statsHidden',             // user dismissed the stats line
+  LIBRARY_TAB: 'aceman.libraryTab',               // last-open library card tab
+  PAGE_SIZE: 'aceman.pageSize',                   // rows per page (search/favs/history)
+  REMOVE_FROM_HISTORY_ON_SAVE: 'aceman.removeFromHistoryOnSave',
 });

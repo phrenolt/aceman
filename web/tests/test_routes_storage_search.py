@@ -26,29 +26,18 @@ def _req(method, path, body=None, query=None, path_params=None):
 
 
 class StorageModeTests(unittest.TestCase):
-    def test_browser_mode_when_no_store(self):
-        ctx = RouteContext(engine="http://e:6878", store=None,
+    def test_bootstrap_shape(self):
+        ctx = RouteContext(engine="http://e:6878", store=mock.Mock(),
                            search_proxy=None)
         resp = storage_routes.get_storage_mode(
             _req("GET", "/api/storage-mode"), ctx)
         body = json.loads(resp.body)
-        self.assertEqual(body["mode"], "browser")
         self.assertEqual(body["engine"], "http://e:6878")
         self.assertEqual(body["search_sources"], [])
-        self.assertIsNone(body["favorites_path"])
-
-    def test_sqlite_mode_surfaces_db_path(self):
-        import pathlib
-        ctx = RouteContext(
-            engine="http://e:6878",
-            store=mock.Mock(),  # truthy
-            db_path=pathlib.Path("/tmp/fav.db"),
-        )
-        body = json.loads(
-            storage_routes.get_storage_mode(
-                _req("GET", "/api/storage-mode"), ctx).body)
-        self.assertEqual(body["mode"], "sqlite")
-        self.assertEqual(body["favorites_path"], "/tmp/fav.db")
+        # Storage is always sqlite now — the old mode / favorites_path
+        # keys were dropped with the browser-storage fallback.
+        self.assertNotIn("mode", body)
+        self.assertNotIn("favorites_path", body)
 
     def test_search_sources_present_when_enabled(self):
         from server.search import SearchProxy

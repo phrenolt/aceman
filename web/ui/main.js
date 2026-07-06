@@ -5,7 +5,8 @@
 import { $, showError, showBusy, hideBusy } from './shared/dom.js';
 import { api } from './shared/api.js';
 import { mountAcemanSelect } from './shared/dropdown.js';
-import { mode, noLocalDesktop, setMode, setNoLocalDesktop } from './shared/runtime.js';
+import { setIcon } from './shared/icons.js';
+import { noLocalDesktop, setNoLocalDesktop } from './shared/runtime.js';
 import { KEYS } from './lib/storage_keys.js';
 import { initWordmark } from './domains/wordmark/index.js';
 import { initDiagnostics } from './domains/diagnostics/index.js';
@@ -17,20 +18,19 @@ import { initContainerMemory } from './domains/container-memory/index.js';
 import { initSysUsage } from './domains/sys-usage/index.js';
 import { initLogs } from './domains/logs/index.js';
 import { refreshDesktopEntry, toggleDesktopEntry } from './domains/desktop/index.js';
-import { onSearchInput, refreshSearchSection, refreshClearButton, clearCidInput,
-         runSearch, searchPagePrev, searchPageNext } from './domains/search/index.js';
-import { describeFavouritesStorageBadge, allFavs, browserFavs, loadFavs,
+import { onSearchInput, runSearch, searchPagePrev, searchPageNext } from './domains/search/index.js';
+import { allFavs, loadFavs,
          updateSaveButton, saveFav, setFavSearch, favPagePrev, favPageNext } from './domains/favourites/index.js';
-import { hideHistorySection, openHistoryDropdown, closeHistoryDropdown,
-         historyDropdownOpen } from './domains/history/index.js';
+import { initLibrary, openLibrarySettings, closeLibrarySettings, saveLibrarySettings } from './domains/library/index.js';
+import { setHistorySearch, histPagePrev, histPageNext, clearAllHistory } from './domains/history/index.js';
 import { parseId, loadPlayers, loadBrowsers, detectCurrentBrowser, detectedPlayers,
          detectedBrowsers, _currentBrowserName, loadLastPlay, extractPlayCidFromUrl,
          resolveDisplayName, current, livePlaybackTarget, cfg, play, initPlaybackControls,
          renderPlaybackTargets, restartStream, refreshEngineStatus, engineState,
-         clearNowPlaying, setTabTitle, setNowPlayingName,
+         clearNowPlaying, clearCidInput, refreshClearButton, setTabTitle, setNowPlayingName,
          waitForEngineReady, waitForBackend, refreshPlayerRowAlignment,
          movePlaybackToSelection, toggleEngine, toggleLanExpose, onPlaybackTargetChange, refreshDeviceStream, copyPlayingCid, toggleDeviceLink, saveAutostart,
-         alignSearchToInput, setCfg, setCurrent } from './domains/playback/index.js';
+         setCfg, setCurrent } from './domains/playback/index.js';
 
 // ---- init --------------------------------------------------------------
 (async () => {
@@ -45,7 +45,6 @@ import { parseId, loadPlayers, loadBrowsers, detectCurrentBrowser, detectedPlaye
   await waitForBackend();
   try {
     const cfg = await api('/api/storage-mode');
-    setMode(cfg.mode);
     // Engine URL as a hover tooltip on the Engine corner-label.
     if (cfg.engine) $('engine-label').title = cfg.engine;
     // Search sources, one per line, surfaced as a tooltip on the
@@ -61,9 +60,6 @@ import { parseId, loadPlayers, loadBrowsers, detectCurrentBrowser, detectedPlaye
         searchStatus.title = '';
       }
     }
-    const badge = describeFavouritesStorageBadge(mode, cfg.favorites_path);
-    $('storage-badge').textContent = badge.text;
-    $('storage-badge').title = badge.title;
     // Hide Linux-desktop-only affordances when the browser is on another host.
     setNoLocalDesktop(!!cfg.no_local_desktop);
     if (noLocalDesktop) {
@@ -139,34 +135,57 @@ import { parseId, loadPlayers, loadBrowsers, detectCurrentBrowser, detectedPlaye
       try { await play(); } finally { hideBusy(); }
     }
   };
-  // Unified Watch input — drives play (Enter/Play button) and search
-  // (debounced per keystroke when the value isn't a cid).
-  $('cid-input').addEventListener('keydown', e => {
-    if (e.key !== 'Enter') return;
-    // Free-text value: search now rather than play (play() bails on a
-    // non-cid anyway).
-    if (parseId($('cid-input').value) === null) { runSearch(); return; }
+  // The Watch input is a read-only DISPLAY of the playing Ace ID. It
+  // becomes editable only on double-click (the rare "paste a specific
+  // id" case). Enter plays; Escape / blur returns it to display mode.
+  const cid = $('cid-input');
+  const exitCidEdit = (restore) => {
+    cid.setAttribute('readonly', '');
+    if (restore) cid.value = (current && current.cid) ? current.cid : '';
+    refreshClearButton();
+  };
+  cid.addEventListener('dblclick', () => {
+    cid.removeAttribute('readonly');
+    cid.focus();
+    cid.select();
+  });
+  cid.addEventListener('keydown', e => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      if (parseId(cid.value) === null) { showError('Enter a 40-hex Ace ID or an acestream:// URI.'); return; }
+      exitCidEdit(false);
+      play();
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      exitCidEdit(true);
+      cid.blur();
+    }
+  });
+  cid.addEventListener('blur', () => exitCidEdit(true));
+  cid.addEventListener('input', () => { refreshClearButton(); refreshDeviceStream(); });
+  // Paste an Ace ID (or acestream:// URI) → play it straight away,
+  // stopping whatever is playing first (play() tears the old stream down).
+  // Listens at the document so Ctrl+V works whether or not the Watch field
+  // is focused. Pastes into the search / favourites boxes are left alone;
+  // pasting into the Watch field itself (display OR mid-edit) plays.
+  document.addEventListener('paste', e => {
+    const t = e.target;
+    if (t && t !== cid && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA')) return;
+    const text = (e.clipboardData && e.clipboardData.getData('text')) || '';
+    if (parseId(text) === null) return;
+    e.preventDefault();
+    // Return to display mode WITHOUT restoring the old cid, then drop in
+    // the pasted value so a later blur can't revert it to what was playing.
+    exitCidEdit(false);
+    cid.value = text.trim();
+    refreshClearButton();
     play();
   });
-  $('cid-input').addEventListener('input', () => {
-    closeHistoryDropdown();
-    hideHistorySection();
-    refreshSearchSection();
-    refreshClearButton();
-    onSearchInput();
-    refreshDeviceStream();   // keep the device QR in sync while typing
-  });
-  $('cid-input').addEventListener('dblclick', e => {
-    if ($('cid-input').value !== '') return; // non-empty → standard text-select
-    e.preventDefault();
-    if (historyDropdownOpen()) { closeHistoryDropdown(); return; }
-    openHistoryDropdown();
-  });
-  $('cid-clear').onclick = () => { clearCidInput(); refreshDeviceStream(); };
-  // Click the playing title or the now-playing id chip → copy the Ace ID
-  // and put it back in the Watch box. (No-op while idle.)
+  $('cid-clear').onclick = () => clearCidInput();
+  setIcon($('cid-clear'), 'close');   // fat X glyph
+  // Click the playing title → copy the Ace ID to the clipboard (the input
+  // already shows it). No-op while idle.
   $('playback-title').onclick = copyPlayingCid;
-  $('now-playing-id').onclick = copyPlayingCid;
   $('save-btn').onclick = saveFav;
   $('engine-toggle').onclick = toggleEngine;
   $('autostart').onchange = saveAutostart;
@@ -188,8 +207,41 @@ import { parseId, loadPlayers, loadBrowsers, detectCurrentBrowser, detectedPlaye
   $('fav-search').oninput = e => setFavSearch(e.target.value);
   $('fav-prev').onclick = favPagePrev;
   $('fav-next').onclick = favPageNext;
+  // Search tab: its own input (independent of the Watch/play field).
+  $('search-input').addEventListener('input', onSearchInput);
+  $('search-input').addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); runSearch(); }
+  });
   $('search-prev').onclick = searchPagePrev;
   $('search-next').onclick = searchPageNext;
+  // History tab: its own search box + pager + clear-all (mirrors favourites).
+  $('history-search').oninput = e => setHistorySearch(e.target.value);
+  $('history-prev').onclick = histPagePrev;
+  $('history-next').onclick = histPageNext;
+  $('history-clear').onclick = clearAllHistory;
+  // ✕ clear buttons on each tab's search box (shown only when non-empty).
+  const wireFieldClear = (inputId, clearId, apply) => {
+    const inp = $(inputId), btn = $(clearId);
+    if (!inp || !btn) return;
+    setIcon(btn, 'close');   // fat X glyph
+    const sync = () => { btn.style.visibility = inp.value ? 'visible' : 'hidden'; };
+    inp.addEventListener('input', sync);
+    btn.onclick = () => { inp.value = ''; sync(); apply(''); inp.focus(); };
+    sync();
+  };
+  wireFieldClear('search-input', 'search-input-clear', () => runSearch());
+  wireFieldClear('fav-search', 'fav-search-clear', v => setFavSearch(v));
+  wireFieldClear('history-search', 'history-search-clear', v => setHistorySearch(v));
+  // Library card: restore the last-open tab (Search / History / Favourites)
+  // and wire the icon toggles.
+  initLibrary();
+  // ⚙ Library settings modal.
+  $('library-cog').onclick = openLibrarySettings;
+  $('library-settings-cancel').onclick = closeLibrarySettings;
+  $('library-settings-save').onclick = saveLibrarySettings;
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && $('library-settings-modal').style.display === 'flex') closeLibrarySettings();
+  });
   $('desktop-toggle').onclick = toggleDesktopEntry;
   refreshDesktopEntry();
 
@@ -233,7 +285,6 @@ import { parseId, loadPlayers, loadBrowsers, detectCurrentBrowser, detectedPlaye
       $('cid-input').value = last.cid;
       // Programmatic value set doesn't trigger the ✕ gate; poke it.
       refreshClearButton();
-      refreshSearchSection();
       // Render the channel name. resolveDisplayName prefers the current
       // allFavs entry (renames win) over the stash snapshot. allFavs may
       // still be loading, so render now and again once favs settle.
@@ -252,10 +303,8 @@ import { parseId, loadPlayers, loadBrowsers, detectCurrentBrowser, detectedPlaye
     }
   }
 
-  // Re-align the search results panel when the play card resizes.
+  // Keep the player-card row alignment in sync when it resizes.
   if (window.ResizeObserver) {
-    const playCard = $('play-card');
-    if (playCard) new ResizeObserver(() => alignSearchToInput()).observe(playCard);
     const playerCard = $('player-card');
     if (playerCard) new ResizeObserver(() => refreshPlayerRowAlignment()).observe(playerCard);
   }

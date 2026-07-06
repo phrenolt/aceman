@@ -6,6 +6,51 @@ import { $, showError, showConfirm, showBusy, hideBusy } from '../../shared/dom.
 import { api } from '../../shared/api.js';
 import { KEYS } from '../../lib/storage_keys.js';
 
+// The core restart sequence: POST /api/restart, then poll the new
+// instance and reload once it answers. Shared by the setup-row "Restart"
+// button (via its modal) and the quick top-of-page rebuild button, so
+// both have identical lifecycle. `btn` is the control to disable/label
+// while the restart is in flight (any element with disabled/textContent).
+export async function restartServer(rebuild, btn, setLabel = true) {
+  showBusy(rebuild
+      ? 'Restarting and rebuilding images… this may take a minute.'
+      : 'Restarting…');
+  const prevLabel = btn ? btn.textContent : null;
+  if (btn) {
+    btn.disabled = true;
+    if (setLabel) btn.textContent = 'Restarting…';
+  }
+  // Breadcrumb consumed by the post-reload init to mark the engine
+  // "settling" (fresh JS has no transition to detect on cold start).
+  sessionStorage.setItem(KEYS.RESTARTED_AT, String(Date.now()));
+  try {
+    await api('/api/restart', {
+      method: 'POST',
+      body: JSON.stringify({ rebuild }),
+    });
+  } catch (_) { /* connection close is expected */ }
+  // Poll until the new instance responds, then reload. Wider window
+  // for rebuild=true since podman build adds a few seconds.
+  const start = Date.now();
+  const timeoutMs = rebuild ? 180_000 : 30_000;
+  const ping = async () => {
+    if (Date.now() - start > timeoutMs) {
+      hideBusy();
+      if (btn) { btn.disabled = false; if (setLabel) btn.textContent = prevLabel; }
+      showError('Restart timed out after '
+              + Math.round(timeoutMs / 1000)
+              + ' s — check the terminal or tools/tail-web.sh.');
+      return;
+    }
+    try {
+      const r = await fetch('/api/storage-mode', { cache: 'no-store' });
+      if (r.ok) { window.location.reload(); return; }
+    } catch (_) { /* still down */ }
+    setTimeout(ping, 700);
+  };
+  setTimeout(ping, 1200);  // give old enough time to release the port
+}
+
 export function initLifecycle() {
   // Manual "Quit" — POST /api/shutdown stops the engine container and
   // tears down the web server. Explicit action, so we stop everything.
@@ -51,47 +96,43 @@ export function initLifecycle() {
   }
   $('server-restart').onclick = openRestartModal;
   $('restart-cancel').onclick = closeRestartModal;
-  $('restart-go').onclick = async () => {
+  $('restart-go').onclick = () => {
     const rebuild = $('restart-rebuild-cb').checked;
     closeRestartModal();
     // Block the UI behind the busy modal while the restart is in flight.
     // The page stays intact behind the backdrop, so a timed-out restart
     // leaves a working UI rather than a text-only error page.
-    showBusy(rebuild
-        ? 'Restarting and rebuilding images… this may take a minute.'
-        : 'Restarting…');
-    const btn = $('server-restart');
-    btn.disabled = true;
-    btn.textContent = 'Restarting…';
-    // Breadcrumb consumed by the post-reload init to mark the engine
-    // "settling" (fresh JS has no transition to detect on cold start).
-    sessionStorage.setItem(KEYS.RESTARTED_AT, String(Date.now()));
-    try {
-      await api('/api/restart', {
-        method: 'POST',
-        body: JSON.stringify({ rebuild }),
-      });
-    } catch (_) { /* connection close is expected */ }
-    // Poll until the new instance responds, then reload. Wider window
-    // for rebuild=true since podman build adds a few seconds.
-    const start = Date.now();
-    const timeoutMs = rebuild ? 180_000 : 30_000;
-    const ping = async () => {
-      if (Date.now() - start > timeoutMs) {
-        hideBusy();
-        btn.disabled = false;
-        btn.textContent = 'Restart';
-        showError('Restart timed out after '
-                + Math.round(timeoutMs / 1000)
-                + ' s — check the terminal or tools/tail-web.sh.');
-        return;
-      }
-      try {
-        const r = await fetch('/api/storage-mode', { cache: 'no-store' });
-        if (r.ok) { window.location.reload(); return; }
-      } catch (_) { /* still down */ }
-      setTimeout(ping, 700);
-    };
-    setTimeout(ping, 1200);  // give old enough time to release the port
+    restartServer(rebuild, $('server-restart'));
   };
+
+  // Quick top-of-page rebuild button: same lifecycle as the modal's
+  // Restart, but always rebuilds and skips the modal so a restart is one
+  // click away without scrolling down to the setup row.
+  const quick = $('quick-rebuild');
+  if (quick) {
+    // The button fades in only after a deliberate 1s hover (CSS). Match
+    // that in behaviour: it stays un-clickable until the same 1s has
+    // elapsed, so a stray click on the invisible target can't fire a
+    // rebuild. Armed on hover/focus, disarmed on leave/blur.
+    let armed = false;
+    let armTimer = null;
+    const arm = () => {
+      clearTimeout(armTimer);
+      armTimer = setTimeout(() => { armed = true; quick.classList.add('armed'); }, 1000);
+    };
+    const disarm = () => { clearTimeout(armTimer); armed = false; quick.classList.remove('armed'); };
+    quick.addEventListener('mouseenter', arm);
+    quick.addEventListener('mouseleave', disarm);
+    quick.addEventListener('focus', arm);
+    quick.addEventListener('blur', disarm);
+    quick.onclick = async () => {
+      if (!armed) return;   // ignore clicks until the 1s reveal has elapsed
+      if (!(await showConfirm({
+        title: 'Rebuild & restart',
+        message: 'Rebuild the images and restart aceman? This may take a minute.',
+        confirmText: 'Rebuild',
+      }))) return;
+      restartServer(true, quick, false);  // keep the ↻ glyph, no label swap
+    };
+  }
 }
