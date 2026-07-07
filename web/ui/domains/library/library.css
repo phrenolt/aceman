@@ -12,6 +12,10 @@
     grid-template-columns: 1fr auto 1fr;
     align-items: center;
     margin: 0 0 .9rem;
+    /* Height of the tabs control (.5rem*2 padding + 1.4rem icon + the
+       container's 1px top/bottom border). The cog matches this to stay
+       square — see .library-cog. */
+    --library-control-h: calc(2.4rem + 2px);
   }
   .library-tabs { grid-column: 2; }
   .library-tabs {
@@ -42,13 +46,15 @@
   .library-tab:hover:not(:disabled) { color: var(--hover); }
 
   /* ⚙ settings — a round button sharing the tabs row, at the right
-     content edge. Stretches to the tabs' height and stays circular via
-     aspect-ratio, so it never exceeds the search-field width. */
+     content edge. Explicitly sized to the tabs' height (a fixed square)
+     rather than align-self:stretch + aspect-ratio, which Firefox refuses
+     to back-derive into a width — that produced a vertical ellipse. */
   .library-cog {
     grid-column: 3;
     justify-self: end;
-    align-self: stretch;
-    aspect-ratio: 1;
+    align-self: center;
+    width: var(--library-control-h);
+    height: var(--library-control-h);
     margin: 0;
     padding: 0;
     display: inline-flex;
@@ -58,9 +64,8 @@
     border: 1px solid #444;
     border-radius: 50%;
     color: var(--mut);
-    font-size: 1.5rem;
-    line-height: 1;
   }
+  .library-cog svg { width: 1.4rem; height: 1.4rem; display: block; }
   .library-cog:hover:not(:disabled) { color: var(--hover); border-color: var(--hover); }
   .library-tab:focus-visible { outline: 2px solid var(--hover); outline-offset: 2px; }
   .library-tab.active {
@@ -170,9 +175,17 @@
   /* Divider between the nav buttons and the rows below, matching the
      setup-row dividers. */
   .pager { padding: 0 0 .4rem; border-bottom: 1px solid #333; margin-bottom: .3rem; }
-  .pager button { font-size: 1.15rem; line-height: 1; padding: .3rem .5rem; min-width: 2rem; margin: 0; }
-  .pager button:first-child { text-align: left; }
-  .pager button:last-child  { text-align: right; }
+  /* Match the row action buttons (button.icon-btn) box exactly, so «/» are
+     the same size as the ★ save + 🗑 delete buttons on the rows below. Same
+     font/padding gives the same height; min-width:2.225rem matches their
+     width (a 1rem glyph + .55rem padding + 1px border ≈ 35.6px — the narrow
+     «/» would otherwise shrink to the 2rem floor). Glyph is centred both axes
+     via inline-flex (like button.icon-btn). This is the ONLY .pager button
+     rule — all three pagers live inside #library-card. */
+  .pager button {
+    font-size: 1rem; line-height: 1; padding: .3rem .55rem; min-width: 2.225rem; margin: 0;
+    display: inline-flex; align-items: center; justify-content: center;
+  }
   .pager button:hover:not(:disabled) { color: var(--hover); border-color: var(--hover); }
 
   /* Saved indicator: the favourite's "<name> ★" in mustard (plain glyph,
@@ -184,10 +197,24 @@
     cursor: pointer;
     display: inline-flex;
     align-items: center;
-    gap: .3rem;
     color: var(--acc);
     font-size: .8rem;
   }
   .saved-badge-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  /* Star matches the trash-can icon size. */
+  /* The trailing star occupies a box the exact size of an .icon-btn so a
+     saved row's ★ lands in the same column (and at the same height) as the
+     ★ button on adjacent non-saved rows. box-sizing MUST be border-box to
+     match: <button> defaults to border-box, so an icon-btn is ~35.6px wide,
+     whereas content-box here made this box ~51.6px — pushing the centred
+     star ~8px further left (the ragged-star-column bug). Keep in sync with
+     button.icon-btn. */
+  .saved-badge-star {
+    flex-shrink: 0;
+    box-sizing: border-box;
+    min-width: 2rem;
+    padding: .3rem .55rem;
+    border: 1px solid transparent;
+    /* Centre the glyph exactly like button.icon-btn does, both axes. */
+    display: inline-flex; align-items: center; justify-content: center;
+  }
   .saved-badge-star svg { width: 1rem; height: 1rem; display: block; }

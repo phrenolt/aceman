@@ -20,14 +20,8 @@
             <label style="font-size:.78rem; color:var(--mut); cursor:pointer; display:inline-flex; align-items:center; gap:.35rem">
               <input type="checkbox" id="sys-usage-toggle">
               <span class="tip" data-tip="Poll host CPU + GPU utilisation (20-second average) every few seconds. Off by default — while off, nothing is polled and the broker is never asked (no nvidia-smi spawns).">CPU / GPU usage</span>
+              <!-- Live figures folded into the label while polling; cleared when off. -->
+              <span id="sys-usage-figures" style="display:none"></span>
             </label>
-          </div>
-          <div id="sys-usage-row" style="display:none; justify-content:center; align-items:center; gap:1rem; font-size:.78rem; color:var(--mut); padding-top:.2rem; flex-wrap:wrap">
-            <span id="sys-cpu-cell" style="display:none">
-              <span class="tip" data-tip="Host CPU utilisation, 20-second average.">CPU</span> <span id="sys-cpu-display"></span>
-            </span>
-            <span id="sys-gpu-cell" style="display:none">
-              <span class="tip" id="sys-gpu-label" data-tip="Host GPU utilisation, 20-second average.">GPU</span> <span id="sys-gpu-display"></span>
-            </span>
           </div>
         </div>

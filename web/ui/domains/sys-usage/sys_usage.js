@@ -1,8 +1,10 @@
 // System-usage domain. When enabled via the Lifecycle toggle, polls host
 // CPU + GPU utilisation (20 s rolling average, computed broker-side) every
-// 3 s and paints the row below the memory cells. Each cell hides itself
-// when its figure is unavailable (no CPU baseline yet, or the GPU vendor
-// doesn't expose a busy metric — e.g. Intel i915 without intel_gpu_top).
+// 3 s and folds the live figures into the toggle's own label — e.g.
+// "CPU / GPU usage — 42% / 30%" — rather than repeating "CPU"/"GPU" in a
+// separate row. The GPU figure is omitted when no GPU exists, and shown as
+// "n/a" when a GPU is detected but its driver exposes no busy metric (Intel
+// i915 without intel_gpu_top being the common case).
 //
 // OFF by default and fully inert when off: no interval, no fetch, so the
 // broker is never called and nvidia-smi is never spawned. The choice
@@ -22,54 +24,56 @@ function _sysEnabled() {
   return localStorage.getItem(SYS_USAGE_KEY) === '1';
 }
 
-function applyCell(cellId, displayId, pct) {
-  const cell = $(cellId);
-  if (!cell) return false;
-  if (pct == null || Number.isNaN(pct)) { cell.style.display = 'none'; return false; }
-  const display = $(displayId);
-  if (display) display.textContent = Math.round(pct) + '%';
-  cell.classList.toggle('mem-cell-warn', pct >= WARN_PCT);
-  cell.style.display = '';
-  return true;
+// Escape text going into the innerHTML string. text is normally numeric and
+// title a known vendor label, but gpu_kind is broker-sourced and could carry a
+// stray quote/angle-bracket for an unknown driver — escape so it can't break
+// out of the attribute or inject markup.
+function _esc(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
-// The GPU cell also carries the vendor label (NVIDIA / AMD / Intel). When a
-// GPU is detected but its driver exposes no load metric — Intel i915 without
-// intel_gpu_top being the common case — show "n/a" rather than hiding it, so
-// the user can see the GPU was recognised.
-function applyGpuCell(u) {
-  const cell = $('sys-gpu-cell');
-  if (!cell) return false;
-  const label = $('sys-gpu-label');
-  if (label) label.textContent = u.gpu_kind ? 'GPU (' + (GPU_NAME[u.gpu_kind] || u.gpu_kind) + ')' : 'GPU';
-  const display = $('sys-gpu-display');
-  const known = u.gpu != null && !Number.isNaN(u.gpu);
-  if (known) {
-    if (display) display.textContent = Math.round(u.gpu) + '%';
-    cell.classList.toggle('mem-cell-warn', u.gpu >= WARN_PCT);
-    cell.style.display = '';
-    return true;
+// A single "42%" figure, reddened via .mem-cell-warn once it crosses WARN_PCT.
+// `title` carries context that no longer has room in the compact label.
+function _figure(text, warn, title) {
+  const cls = warn ? ' class="mem-cell-warn"' : '';
+  const t = title ? ` title="${_esc(title)}"` : '';
+  return `<span${cls}${t}>${_esc(text)}</span>`;
+}
+
+function _clearFigures() {
+  const fig = $('sys-usage-figures');
+  if (fig) { fig.textContent = ''; fig.style.display = 'none'; }
+}
+
+// Paint the live figures into the label. CPU always leads (matching the
+// "CPU / GPU" wording); the GPU slot follows only when a GPU is present, so
+// the "/" ordering stays unambiguous. A pending CPU baseline shows "…".
+function _paintFigures(u) {
+  const fig = $('sys-usage-figures');
+  if (!fig) return;
+  const cpuKnown = u.cpu != null && !Number.isNaN(u.cpu);
+  const gpuKnown = u.gpu != null && !Number.isNaN(u.gpu);
+  const slots = [
+    cpuKnown ? _figure(Math.round(u.cpu) + '%', u.cpu >= WARN_PCT, 'Host CPU, 20-second average')
+             : _figure('…', false, 'Waiting for CPU baseline'),
+  ];
+  if (gpuKnown || u.gpu_kind) {
+    const vendor = (GPU_NAME[u.gpu_kind] || u.gpu_kind || '') + ' GPU, 20-second average';
+    slots.push(gpuKnown ? _figure(Math.round(u.gpu) + '%', u.gpu >= WARN_PCT, vendor.trim())
+                        : _figure('n/a', false, vendor.trim()));
   }
-  if (u.gpu_kind) {
-    if (display) display.textContent = 'n/a';
-    cell.classList.remove('mem-cell-warn');
-    cell.style.display = '';
-    return true;
-  }
-  cell.style.display = 'none';
-  return false;
+  fig.innerHTML = ' — ' + slots.join(' / ');
+  fig.style.display = '';
 }
 
 async function refreshSysUsage() {
-  const row = $('sys-usage-row');
-  if (!row) return;
+  if (!$('sys-usage-figures')) return;
   try {
     const u = await fetch('/api/sys/usage', { cache: 'no-store' }).then(r => r.json());
-    const cpuOn = applyCell('sys-cpu-cell', 'sys-cpu-display', u.cpu);
-    const gpuOn = applyGpuCell(u);
-    row.style.display = (cpuOn || gpuOn) ? 'flex' : 'none';
+    _paintFigures(u);
   } catch (_) {
-    row.style.display = 'none';
+    _clearFigures();
   }
 }
 
@@ -81,8 +85,7 @@ function _startSysUsage() {
 
 function _stopSysUsage() {
   if (_sysTimer) { clearInterval(_sysTimer); _sysTimer = null; }
-  const row = $('sys-usage-row');
-  if (row) row.style.display = 'none';
+  _clearFigures();
 }
 
 export function initSysUsage() {
