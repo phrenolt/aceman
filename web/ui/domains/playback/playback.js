@@ -34,17 +34,20 @@ import { buildPlaybackOptions } from './lib/playback_options.js';
 import { buildLanStreamUrl } from './lib/lan_url.js';
 import { decidePlaybackPath } from './lib/playback_decision.js';
 import { targetValueToConfig } from './lib/playback_config.js';
-import { clampBuffer, bufferedAhead, bufferReady } from './lib/playback_buffer.js';
+import { clampBuffer, bufferedAhead, bufferReady, BUFFER_DEFAULT } from './lib/playback_buffer.js';
+import { effectiveSafeBytes, foldObservedCap, maxBufferSecs } from './lib/mse_budget.js';
 import { describePlayButton } from './lib/play_stop_button.js';
 import { describeMoveButton } from './lib/move_stream_button.js';
 import { describeEngineToggle } from './lib/engine/engine_start_stop_toggle.js';
 import { resolveDisplayName } from './lib/playback_display_name.js';
 import { describePlayButtonGate } from './lib/engine/play_button_gate.js';
 import { allFavs, loadFavs, updateSaveButton } from '../favourites/index.js';
+import { findFavouriteByCid } from '../favourites/lib/favourite_lookup.js';
+import { openFavourite } from '../library/index.js';
 import { detectedPlayers, detectedBrowsers, _currentBrowserName } from './detection.js';
 import { buildGpuParams, gpuPipelineLabel } from '../gpu/index.js';
 import { noLocalDesktop } from '../../shared/runtime.js';
-import { refreshStatsVisibility } from './playback_controls.js';
+import { refreshStatsVisibility, setPlaybackBuffer } from './playback_controls.js';
 
 // The active stream, just enough to drive the Save button: we no longer
 // own the session (the host shell does via acestream:// dispatch), so
@@ -146,6 +149,14 @@ function startInBrowserPlayback(cid) {
   // dead instance and a leaked MediaSource will leak the upstream socket.
   stopInBrowserPlayback();
 
+  // Remember what we're playing so the stall watchdog can match the
+  // server's proxy post-mortem (/api/stream/last-error) to this stream —
+  // both the id AND a server-clock baseline, so a prior play of the same
+  // channel can't lend its stale reason to this one.
+  _activeStreamCid = cid;
+  _playStartErrorAt = 0;    // until the baseline snapshot below resolves
+  _snapshotLastErrorBaseline();
+  _streamByteRate = null;   // fresh bitrate estimate for this stream
   const v = $('pb-video');
   const status = $('pb-video-status');
   v.style.display = '';
@@ -196,6 +207,7 @@ function startInBrowserPlayback(cid) {
     window.mpegts.LoggingControl.enableInfo = false;
     window.mpegts.LoggingControl.enableDebug = false;
     window.mpegts.LoggingControl.enableVerbose = false;
+    _installMpegtsBufferLog(window.mpegts);
   }
   try {
     mpegtsPlayer = window.mpegts.createPlayer(playerCfg);
@@ -226,8 +238,14 @@ function startInBrowserPlayback(cid) {
     });
     mpegtsPlayer.on(E.STATISTICS_INFO, (stats) => {
       if (!stats) return;
-      if (stats.speed != null)
+      if (stats.speed != null) {
         speedMbps = stats.speed * 8 / 1024;  // KB/s → Mbps
+        // Smoothed byte throughput (EMA) for the "max buffer" estimate. The
+        // instantaneous download rate is bursty on a live stream; the EMA
+        // converges to the encode bitrate that actually fills the buffer.
+        const r = stats.speed * 1024;        // KB/s → bytes/s
+        _streamByteRate = _streamByteRate == null ? r : _streamByteRate * 0.9 + r * 0.1;
+      }
       if (stats.decodedFrames != null) {
         const now = performance.now();
         if (_lastFrames !== null && _lastFrameTime !== null) {
@@ -242,10 +260,13 @@ function startInBrowserPlayback(cid) {
       // Freeze the line on the error — stop the health ticker from
       // overwriting it with the next "· buffer" refresh.
       _stopBufferHealth();
+      _clearStall();   // an mpegts error supersedes any pending stall note
       console.warn('[mpegts]', type, detail);
-      status.textContent = 'Stream error: ' + type
-          + (detail && detail.code ? ' (code ' + detail.code + ')' : '');
-      status.className = 'gate-hint warn';
+      // Route through the post-mortem so a proxy death that surfaces here (a
+      // NetworkError, not a DOM stall) still gets the server's WHY and the
+      // one-click buffer-reset recovery — same as the hard-stall path.
+      _reportStreamDeath('Stream error: ' + type
+          + (detail && detail.code ? ' (code ' + detail.code + ')' : ''));
     });
   }
 
@@ -275,10 +296,14 @@ function startInBrowserPlayback(cid) {
     if (_stalled) return;             // stall note owns the line until playback resumes
     const base = mediaInfoText || 'Playing';
     const ahead = bufferedAhead(v.buffered, v.currentTime);
+    // Honest ceiling for the pre-roll buffer at the current bitrate — the
+    // slider can't actually hold more than the browser's byte budget allows.
+    const maxSecs = _maxBufferSecs();
+    const maxs = maxSecs != null ? ' · max ~' + maxSecs + ' s' : '';
     const mbps = speedMbps != null ? ' · ' + speedMbps.toFixed(1) + ' Mbps' : '';
     const fps  = currentFps != null ? ' · ' + Math.round(currentFps) + ' fps' : '';
     const res  = v.videoWidth  ? ' · ' + v.videoWidth + '×' + v.videoHeight : '';
-    status.textContent = base + ' · buffer ' + ahead.toFixed(1) + ' s' + mbps + fps + res + ' · ' + encodeLabel;
+    status.textContent = base + ' · buffer ' + ahead.toFixed(1) + ' s' + maxs + mbps + fps + res + ' · ' + encodeLabel;
     status.className = 'gate-hint';
   };
   const beginPlayback = () => {
@@ -306,39 +331,203 @@ function startInBrowserPlayback(cid) {
 // a stream error can clear it (otherwise it'd keep painting over them).
 let _bufferHealthTimer = null;
 
-// Stall watchdog. Short buffering hiccups are normal on live streams and
-// almost always recover on their own, so we're deliberately tolerant:
-// only after a long stall (20 s) do we surface a gentle, non-alarming
-// note, and the moment playback resumes we wipe it. The buffer-health
-// ticker keeps running throughout (renderStatus no-ops while _stalled) so
-// recovery restores the normal line automatically.
-let _stallTimer = null;
+// The stream we're currently playing in-tab, so the stall watchdog can
+// match the server's proxy post-mortem to it (see _reportStreamDeath).
+let _activeStreamCid = null;
+// The server's last-error `at` timestamp as it stood when this play STARTED
+// (server clock, snapshotted via the same endpoint). A record newer than this
+// belongs to the current play; one equal to it is a PRIOR play's death. We
+// compare server-clock-to-server-clock — never the browser's Date.now(), which
+// can be skewed on a LAN client and would mis-match a stale reason to this play.
+let _playStartErrorAt = 0;
+
+// How long the pre-roll fill may sit frozen before we treat it as a
+// browser-buffer overflow rather than a slow stream (see _preRollBuffer).
+const PREROLL_STALL_MS = 12000;
+
+// --- "max buffer" estimate (arithmetic in ./lib/mse_budget.js) ------------
+// Smoothed byte throughput of the current stream (bytes/s), fed from mpegts
+// STATISTICS_INFO. Module-scoped so the overflow recorder can read it; reset
+// per play in startInBrowserPlayback.
+let _streamByteRate = null;
+
+// Learned SourceBuffer byte ceiling, cached so the 1 s render ticker isn't
+// re-reading localStorage every tick for a value that only changes on an
+// overflow write. `undefined` = not loaded yet; NaN = nothing stored.
+let _learnedMseCapBytes;
+function _learnedMseCap() {
+  if (_learnedMseCapBytes === undefined)
+    _learnedMseCapBytes = parseInt(localStorage.getItem(KEYS.MSE_CAP_BYTES) || '', 10);
+  return _learnedMseCapBytes;
+}
+function _safeMseBytes() {
+  return effectiveSafeBytes(_learnedMseCap());
+}
+
+// An overflow at `seconds` buffered, at the current byte rate, is a real
+// device-specific ceiling (bytes ≈ seconds × rate). Fold it into the stored
+// running minimum so the "max ~N s" readout self-calibrates over time.
+function _recordObservedMseCap(seconds) {
+  if (!(seconds > 0) || !(_streamByteRate > 0)) return;
+  const next = foldObservedCap(_learnedMseCap(), seconds * _streamByteRate);
+  if (next != null) {
+    _learnedMseCapBytes = Math.round(next);
+    localStorage.setItem(KEYS.MSE_CAP_BYTES, String(_learnedMseCapBytes));
+  }
+}
+
+// Seconds of buffer the browser can hold at the current bitrate, or null
+// until we have a rate — the honest ceiling the pre-roll slider is bounded by.
+function _maxBufferSecs() {
+  return maxBufferSecs(_safeMseBytes(), _streamByteRate);
+}
+
+// Stall watchdog, two-stage. Short buffering hiccups are normal on live
+// streams and usually self-recover, so stage 1 (5 s) shows only a gentle,
+// non-alarming note and keeps the health ticker running. If it's STILL
+// stalled at stage 2 (20 s) the feed is genuinely dead — we surface a
+// real error and pull the server's proxy post-mortem so the user learns
+// WHY (buffer overflow / engine EOF / corrupt source). Recovery at any
+// point wipes both. (Before #21 this was a single 8 s hard error; #21
+// softened it into a note that never escalated — hiding real deaths.)
+let _stallSoftTimer = null;
+let _stallHardTimer = null;
 let _stalled = false;
 // The active renderStatus closure, stashed so recovery can repaint the
 // normal status line from module scope.
 let _renderStatusFn = null;
 function _clearStall() {
-  if (_stallTimer) { clearTimeout(_stallTimer); _stallTimer = null; }
+  if (_stallSoftTimer) { clearTimeout(_stallSoftTimer); _stallSoftTimer = null; }
+  if (_stallHardTimer) { clearTimeout(_stallHardTimer); _stallHardTimer = null; }
   if (_stalled) {
     _stalled = false;
-    if (_renderStatusFn) _renderStatusFn();   // restore the normal line
+    if (!_renderStatusFn) return;
+    // A stall that crossed the hard-timeout stopped the health ticker (but
+    // kept _renderStatusFn). If playback has recovered, restart it so the
+    // status line and buffer/fps figures un-freeze; otherwise just repaint.
+    if (_bufferHealthTimer) _renderStatusFn();
+    else _startBufferHealth(_renderStatusFn);
   }
 }
 function _armStall() {
-  if (_stallTimer || _stalled) return;
-  _stallTimer = setTimeout(() => {
-    _stallTimer = null;
-    _stalled = true;
+  if (_stallSoftTimer || _stallHardTimer || _stalled) return;
+  _stallSoftTimer = setTimeout(() => {
+    _stallSoftTimer = null;
+    _stalled = true;   // renderStatus no-ops so the note owns the line
     const s = $('pb-video-status');
     if (s) { s.textContent = 'Buffering — the stream paused, still trying…'; s.className = 'gate-hint'; }
+  }, 5000);
+  _stallHardTimer = setTimeout(() => {
+    _stallHardTimer = null;
+    _stalled = true;
+    // Freeze the readout on the error, but keep _renderStatusFn so
+    // _clearStall can un-freeze if the stream turns out to be recoverable.
+    _stopBufferHealthTicker();
+    _reportStreamDeath('Stream stalled — proxy disconnected or stream ended');
   }, 20000);
 }
 
-function _stopBufferHealth() {
-  _renderStatusFn = null;
+// A dismissible top-header notice for the pre-roll buffer overflowing:
+// says what happened and offers a one-click fix. Resetting the buffer
+// alone leaves the dead stream spinning, so the action ALSO restarts the
+// stream — the reset only takes effect on the next start (buffer is read
+// at play time), so reset-then-restart is the complete recovery.
+// `atSecs` is the measured buffer fill depth at overflow (from the pre-roll
+// path). Pass null when it isn't known (the server post-mortem only knows the
+// stream ran, not how deep the buffer got) — the message then omits the figure
+// rather than printing a misleading one.
+function _bufferOverflowNotice(atSecs, target) {
+  const at = atSecs != null ? '~' + atSecs + ' s' : 'its limit';
+  console.warn('[playback/buffer] pre-roll buffer overflow — MSE SourceBuffer '
+    + 'filled at ' + at + (atSecs != null ? '/' + target + ' s' : '')
+    + '; lower the Player buffer.');
+  showNotice({
+    id: 'buffer-overflow',
+    variant: 'danger',
+    message: 'Buffer target ' + target + ' s is too high for this stream — the '
+      + 'browser buffer filled at ' + at + ' and the stream dropped. '
+      + 'Lower the Player buffer to keep playback stable.',
+    actionLabel: '↺ Reset to ' + BUFFER_DEFAULT + ' s & restart',
+    onAction: () => {
+      setPlaybackBuffer(BUFFER_DEFAULT);
+      dismissNotice('buffer-overflow');
+      restartStream();   // reset applies on next start, so restart now
+    },
+  });
+}
+
+// Paint a real error on the video line, then enrich it with the server's
+// last proxy end reason (the WHY) when that post-mortem lines up with the
+// stream we were playing. Best-effort — a fetch failure just leaves the
+// base message. When the server reports the classic buffer-overflow
+// signature, also raise the reset-buffer notice.
+async function _reportStreamDeath(baseMsg) {
+  const s = $('pb-video-status');
+  if (s) { s.textContent = baseMsg; s.className = 'gate-hint warn'; }
+  let reason = null;
+  try {
+    const r = await fetch('/api/stream/last-error', { cache: 'no-store' }).then(x => x.json());
+    // Accept only a record for THIS stream: same channel AND newer than the
+    // last-error baseline we snapshotted when this play started (a prior
+    // play's death shares that baseline `at`, so it's excluded).
+    if (r && r.available && r.cid === _activeStreamCid
+        && r.at > _playStartErrorAt) reason = r;
+  } catch (_) { /* keep the base message */ }
+  if (reason && s) s.textContent = baseMsg + ' — ' + reason.hint;
+  if (reason && /browser dropped|buffer/.test(reason.hint)) {
+    // We don't know the exact fill depth server-side (duration_s is the
+    // stream's total runtime, not the buffer level), so pass null — the
+    // notice phrases it without a bogus "filled at ~300 s" figure.
+    _bufferOverflowNotice(null, getPlaybackBuffer());
+  }
+}
+
+// Snapshot the server's current last-error `at` at play start, so
+// _reportStreamDeath can tell a fresh death (newer `at`) from a stale record
+// for the same channel — all on the server clock. Best-effort and fire-and-
+// forget; if it never resolves, _playStartErrorAt stays 0 and only the cid
+// match gates (the pre-existing behaviour, minus the clock-skew bug).
+async function _snapshotLastErrorBaseline() {
+  const startedCid = _activeStreamCid;
+  try {
+    const r = await fetch('/api/stream/last-error', { cache: 'no-store' }).then(x => x.json());
+    // Ignore if another play superseded us while the fetch was in flight.
+    if (_activeStreamCid !== startedCid) return;
+    if (r && r.available && typeof r.at === 'number') _playStartErrorAt = r.at;
+  } catch (_) { /* leave the baseline at 0 */ }
+}
+
+// One-time: forward mpegts.js's buffer diagnostics to the console even
+// though we keep its default info/debug/verbose console output off. The
+// Log listener fires via ENABLE_CALLBACK *independently* of those flags,
+// so this surfaces the "SourceBuffer is full, suspend transmuxing" lines
+// (the buffer-overflow breadcrumb the console used to show) WITHOUT the
+// noisy init-segment chatter #21 silenced.
+let _mpegtsBufLogInstalled = false;
+function _installMpegtsBufferLog(mpegts) {
+  const lc = mpegts && mpegts.LoggingControl;
+  if (_mpegtsBufLogInstalled || !lc || typeof lc.addLogListener !== 'function') return;
+  _mpegtsBufLogInstalled = true;
+  lc.addLogListener((type, str) => {
+    if (/SourceBuffer is full|buffering duration exceeded|buffer exceeded/i.test(str)) {
+      console.warn('[playback/buffer]', str);
+    }
+  });
+}
+
+// Stop the 1s ticker but KEEP _renderStatusFn, so _clearStall can restart it
+// when a long-but-recoverable stall resumes (see the hard-stall path).
+function _stopBufferHealthTicker() {
   if (!_bufferHealthTimer) return;
   clearInterval(_bufferHealthTimer);
   _bufferHealthTimer = null;
+}
+
+// Full stop: ticker off AND the render closure dropped. Used on teardown
+// (Stop / fresh Play), where nothing should repaint the old stream.
+function _stopBufferHealth() {
+  _stopBufferHealthTicker();
+  _renderStatusFn = null;
 }
 
 function _startBufferHealth(render) {
@@ -367,6 +556,8 @@ function _cancelPreRoll() {
 function _preRollBuffer(v, status, target, onRelease) {
   _cancelPreRoll();
   let done = false;
+  let lastHave = -1;      // highest buffered-ahead seconds seen so far
+  let frozenSince = 0;    // timestamp the fill last advanced
   const release = () => {
     if (done) return;
     done = true;
@@ -375,10 +566,26 @@ function _preRollBuffer(v, status, target, onRelease) {
   };
   const tick = () => {
     if (!mpegtsPlayer) { _cancelPreRoll(); return; }
+    if (bufferReady(v.buffered, v.currentTime, target)) { release(); return; }
     const have = Math.floor(bufferedAhead(v.buffered, v.currentTime));
+    const now = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+    if (have > lastHave) { lastHave = have; frozenSince = now; }
+    // Fill stopped advancing well short of target for PREROLL_STALL_MS:
+    // the browser's MSE SourceBuffer hit its memory ceiling (nothing plays
+    // during pre-roll, so autoCleanup can't evict). Warn with the cause +
+    // a one-click buffer reset, then release — starting playback lets the
+    // playhead advance so the buffer can drain, instead of freezing to the
+    // safety cap and stranding the user on "Buffering 54/60 s…".
+    else if (have > 0 && frozenSince && now - frozenSince > PREROLL_STALL_MS) {
+      // The fill froze because the SourceBuffer is full at `have` seconds —
+      // that's a real, measured ceiling. Feed it back so "max ~N s" learns.
+      _recordObservedMseCap(have);
+      _bufferOverflowNotice(have, target);
+      release();
+      return;
+    }
     status.textContent = 'Buffering ' + Math.min(have, target) + '/' + target + ' s…';
     status.className = 'gate-hint';
-    if (bufferReady(v.buffered, v.currentTime, target)) release();
   };
   const timer = setInterval(tick, 250);
   const cap = setTimeout(release, (target + 15) * 1000);
@@ -400,6 +607,8 @@ function stopInBrowserPlayback() {
   _cancelPreRoll();
   _stopBufferHealth();
   _clearStall();
+  _activeStreamCid = null;
+  dismissNotice('buffer-overflow');   // a fresh Stop/Play clears the warning
   if (mpegtsPlayer) {
     try { mpegtsPlayer.pause(); } catch (_) {}
     try { mpegtsPlayer.unload(); } catch (_) {}
@@ -445,9 +654,8 @@ function _toast(message) {
   _toastTimer = setTimeout(() => dismissNotice('aceman-toast'), 2500);
 }
 
-// Click handler for the playback title: copy the playing cid to the
-// clipboard, with a brief top notice. The Watch input already displays
-// the id, so this is purely the copy affordance.
+// Copy the playing cid to the clipboard, with a brief top notice. The Watch
+// input already displays the id, so this is purely the copy affordance.
 export function copyPlayingCid() {
   if (!current || !current.cid) return;
   const cid = current.cid;
@@ -458,6 +666,21 @@ export function copyPlayingCid() {
   } else {
     _toast('Clipboard unavailable');
   }
+}
+
+// Playback-title interaction: single-click copies the Ace ID, double-click
+// opens the channel in the Favourites tab (when it's actually saved). We copy
+// SYNCHRONOUSLY in the click handler — deferring it (to "wait out" a possible
+// double-click) drops the click's transient user activation, so
+// navigator.clipboard.writeText rejects on Safari/WebKit. A double-click just
+// copies on its first click (harmless) and then opens; no timer needed.
+export function onPlaybackTitleClick() {
+  copyPlayingCid();
+}
+export function onPlaybackTitleDblClick() {
+  if (!current || !current.cid) return;
+  const fav = findFavouriteByCid(allFavs, current.cid);
+  if (fav) openFavourite(fav.name);   // only meaningful for a saved channel
 }
 
 export function setNowPlayingName(primary, sub) {

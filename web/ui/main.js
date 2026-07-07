@@ -29,7 +29,7 @@ import { parseId, loadPlayers, loadBrowsers, detectCurrentBrowser, detectedPlaye
          renderPlaybackTargets, restartStream, refreshEngineStatus, engineState,
          clearNowPlaying, clearCidInput, refreshClearButton, setTabTitle, setNowPlayingName,
          waitForEngineReady, waitForBackend, refreshPlayerRowAlignment,
-         movePlaybackToSelection, toggleEngine, toggleLanExpose, onPlaybackTargetChange, refreshDeviceStream, copyPlayingCid, toggleDeviceLink, saveAutostart,
+         movePlaybackToSelection, toggleEngine, toggleLanExpose, onPlaybackTargetChange, refreshDeviceStream, onPlaybackTitleClick, onPlaybackTitleDblClick, toggleDeviceLink, saveAutostart,
          setCfg, setCurrent } from './domains/playback/index.js';
 
 // ---- init --------------------------------------------------------------
@@ -185,7 +185,8 @@ import { parseId, loadPlayers, loadBrowsers, detectCurrentBrowser, detectedPlaye
   setIcon($('cid-clear'), 'close');   // fat X glyph
   // Click the playing title → copy the Ace ID to the clipboard (the input
   // already shows it). No-op while idle.
-  $('playback-title').onclick = copyPlayingCid;
+  $('playback-title').onclick = onPlaybackTitleClick;
+  $('playback-title').ondblclick = onPlaybackTitleDblClick;
   $('save-btn').onclick = saveFav;
   $('engine-toggle').onclick = toggleEngine;
   $('autostart').onchange = saveAutostart;
