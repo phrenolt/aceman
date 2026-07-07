@@ -1,6 +1,11 @@
   <div class="card has-card-label" id="play-card">
     <span class="card-label" id="playback-label">
       <span id="playback-title">Watch</span>
+      <!-- Saved-to-favourites indicator: a ★ shown next to the now-playing
+           title when the channel is a favourite (replaces the old duplicate
+           "<name> ★" badge). Double-clicking the title opens it in the
+           Favourites tab. -->
+      <span id="playback-fav-star" style="display:none" aria-hidden="true"><svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M12 2.5l2.9 6.1 6.6.6-5 4.4 1.5 6.5L12 17.9 6.5 20.6 8 14.1l-5-4.4 6.6-.6z"/></svg></span>
       <span id="playback-live" class="live-dot" style="display:none">live</span>
     </span>
     <div id="play-row-wrap">
@@ -20,9 +25,12 @@
                   style="visibility:hidden">✕</button>
         </div>
         <button id="restream-btn" class="icon-btn" title="Restart stream with current settings (keeps the same channel)" aria-label="Restart stream" style="visibility:hidden">↺</button>
+        <!-- Save-to-favourites: a ★ glyph button matching the library's
+             row stars. Reserved slot (visibility, not display) so it never
+             reflows the input row when Play reveals it. -->
+        <button id="save-btn" class="icon-btn" title="Save as favourite"
+                aria-label="Save as favourite" style="visibility:hidden"></button>
       </div>
-      <button id="save-btn" style="display:none">Save as favourite</button>
-      <div id="save-indicator" style="display:none"></div>
     </div>
     <div class="gate-hint" id="play-hint"></div>
     <div class="err" id="err"></div>

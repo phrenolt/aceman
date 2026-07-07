@@ -18,7 +18,12 @@
              reset, etc.) so they don't shout off the page. */
           --danger:#c33;
           /* Play-button green — matches .status.ok and reads as "go". */
-          --go:#6c6; }
+          --go:#6c6;
+          /* Height of the play-row controls (Ace-ID field + ▶/↺/★ buttons).
+             One value shared by the field and the square buttons so they
+             line up exactly: 2.35rem = the field's natural height
+             (line 1.4×14px + .5rem×2 padding + 2×1px border). */
+          --ctl:2.35rem; }
   body { font: 14px/1.4 system-ui, sans-serif; max-width: 760px; margin: 2rem auto; padding: 0 1rem;
          background: var(--bg); color: var(--fg); }
   h1 { font-size: 1.4rem; margin: 0 0 .25rem; text-align: center; }
@@ -161,7 +166,12 @@
     0%, 100% { text-shadow: 0 0 4px rgba(220,60,60,.35); }
     50%       { text-shadow: 0 0 9px rgba(220,60,60,.75); }
   }
-  .mem-cell-warn span:first-of-type { animation: mem-glow 1.6s ease-in-out infinite; }
+  /* Memory cells carry the warn class on a cell wrapping child spans, so the
+     glow targets the first span. The sys-usage figure instead carries the
+     class on the figure span ITSELF (no child span) — target it directly so
+     it pulses too, not just recolours. */
+  .mem-cell-warn span:first-of-type,
+  #sys-usage-figures .mem-cell-warn { animation: mem-glow 1.6s ease-in-out infinite; }
   .row { display: flex; gap: .5rem; align-items: center; margin: .5rem 0; }
   .row input { flex: 1; }
   .card { border: 1px solid #333; border-radius: 6px; padding: .75rem 1rem; margin: 1rem 0;
@@ -268,21 +278,41 @@
   #engine-card { display: flex; flex-direction: column; justify-content: center; }
   /* Outer wrap: save-btn sits to the right when there's room, wraps centred below if not. */
   #play-row-wrap { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: .5rem; margin: .5rem 0; }
-  /* play-row is nowrap internally; parent handles vertical margin. */
-  .play-row { flex-wrap: nowrap; justify-content: center; margin: 0; }
+  /* play-row is nowrap internally; parent handles vertical margin. min-width:0
+     lets this nested flex item shrink below its min-content so the field
+     (not the square buttons) gives way on a narrow card. */
+  .play-row { flex-wrap: nowrap; justify-content: center; margin: 0; min-width: 0; }
   /* Fixed-width wrapper holds the field + its inward ✕ overlay, so the row
      never resizes when Play reveals the ↺ / Save controls. */
-  .cid-field-wrap { position: relative; flex: 0 0 auto; width: 41ch; max-width: 100%; min-width: 0; }
+  /* flex: 0 1 auto — no grow (stays 41ch on roomy cards) but MAY shrink
+     (min-width:0) so the row's square buttons never get pushed off a narrow
+     card. Without the shrink the nowrap row overflows and clips ★. */
+  .cid-field-wrap { position: relative; flex: 0 1 auto; width: 41ch; max-width: 100%; min-width: 0; }
   /* Vertical padding matches the library search field (.5rem) so the two
      inputs are the same height. */
-  #cid-input { width: 100%; box-sizing: border-box; padding: .5rem 1.9rem .5rem .5rem; }
-  /* ↺ slot is reserved (visibility-toggled in JS, not display) so showing/
-     hiding it doesn't shift the row. */
-  #restream-btn { padding: .3rem .15rem; }
-  /* Save always drops to its own centred line so it never reflows the input row. */
-  #save-btn { padding: .3rem .8rem; flex-basis: 100%; }
-  /* The "already saved" glyph indicator shares that own-line, centred slot. */
-  #save-indicator { flex-basis: 100%; display: flex; justify-content: center; }
+  #cid-input { width: 100%; min-width: 0; box-sizing: border-box; padding: .5rem 1.9rem .5rem .5rem; height: var(--ctl); }
+  /* ↺ restart and ★ save slots are reserved (visibility-toggled in JS, not
+     display) so showing/hiding them never reflows the input row. Both live
+     on the play-row itself as square glyph buttons. */
+  /* Play/Stop, ↺ restart and ★ save are perfect squares that match the
+     Ace-ID field: both use --ctl for the size. (aspect-ratio:1 on a
+     stretch-sized flex item does NOT square it — the width stays at
+     min-width — so we pin an explicit width AND height instead; verified by
+     render.) padding:0 + box-sizing:border-box keep the glyph, centred by
+     button.icon-btn's flex rule, inside the square; margin:0 drops the base
+     button's vertical margin. */
+  #play-btn, #restream-btn, #save-btn {
+    width: var(--ctl); height: var(--ctl); flex: 0 0 auto;
+    margin: 0; padding: 0; box-sizing: border-box; align-self: center;
+  }
+  /* Saved-to-favourites ★ next to the now-playing title (mustard, sized to
+     match the row/save stars). Hidden via the inline style="display:none" in
+     HTML; updateSaveButton clears that (→ inline-flex) to show it. */
+  #playback-fav-star { display: inline-flex; align-items: center; vertical-align: middle;
+                       color: var(--acc); margin-left: .3rem; }
+  /* Size to the label text (1em ≈ .72rem here), not a fixed 1rem, so it sits
+     proportional to the small uppercase title rather than towering over it. */
+  #playback-fav-star svg { width: 1.1em; height: 1.1em; display: block; }
 
   /* Corner label: a small "fieldset legend"-style tag in the top-left
      of a card. Sits half-overlapping the card border so it reads as a
@@ -322,6 +352,11 @@
     line-height: 1;
     padding: .3rem .55rem;
     min-width: 2rem;
+    /* Centre the glyph (text ↺/▶ OR an inline ★/🗑 svg) both ways. Without
+       this the block-level svg sits at the padding-box's top-left corner,
+       reading as "shifted left" — visible on the play-row ★ and the
+       library row save/trash buttons alike. */
+    display: inline-flex; align-items: center; justify-content: center;
   }
 
   @media (min-width: 1100px) {
@@ -439,7 +474,8 @@
   #fav-search { font-size: .9rem; }
   .pager { display: flex; justify-content: space-between; align-items: center;
            font-size: .8rem; margin-top: .5rem; margin-bottom: .3rem; }
-  .pager button { padding: .25rem .6rem; font-size: .85rem; }
+  /* .pager button lives in library.css (the sole rule) — all pagers are
+     inside #library-card, so there is nothing to style here. */
 
 /*@include domains/diagnostics/diagnostics.css*/
 

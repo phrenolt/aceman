@@ -17,4 +17,5 @@ export const KEYS = Object.freeze({
   LIBRARY_TAB: 'aceman.libraryTab',               // last-open library card tab
   PAGE_SIZE: 'aceman.pageSize',                   // rows per page (search/favs/history)
   REMOVE_FROM_HISTORY_ON_SAVE: 'aceman.removeFromHistoryOnSave',
+  MSE_CAP_BYTES: 'aceman.mseCapBytes',            // learned SourceBuffer byte ceiling
 });

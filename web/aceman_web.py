@@ -478,6 +478,20 @@ class Handler(http.server.BaseHTTPRequestHandler):
     # the engine's idle timeout fires. Always swapped under _active_lock.
     _active_command_url: "str | None" = None
     _active_lock = threading.Lock()
+    # Post-mortem of the most recent proxy teardown, so the browser can
+    # ask WHY a stream died (the video status line only sees a generic
+    # stall). Written as one fully-built dict in the proxy finally block
+    # (atomic swap — readers never see a partial); surfaced by
+    # GET /api/stream/last-error. None until the first stream ends.
+    _last_proxy_end: "dict | None" = None
+    # Processes we killed on purpose (a user Stop or a bump for a new stream),
+    # so the streaming thread's teardown logs it as a clean stop instead of
+    # dumping ffmpeg's 80-line stderr tail and guessing at a cause. Keyed on the
+    # Popen OBJECT, not its PID: a PID is recycled by the OS, so a leaked PID
+    # (from the natural-EOF-races-a-bump window) could later mis-flag an
+    # unrelated ffmpeg as an intentional stop and swallow its crash dump. The
+    # object is unique for its lifetime. Mutated only under _active_lock.
+    _intentional_stops: "set" = set()
     # Allow-list of legitimate Host header values, computed at startup
     # from --host/--port. None means "skip the check" (the admin opted
     # into a non-loopback bind, so DNS-rebinding isn't our concern). For
@@ -548,6 +562,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         "/api/engine/status",   # engine status poll (every 4 s)
         "/api/engine/memory",   # memory polling (every 8 s while playing)
         "/api/web/memory",      # memory polling (every 8 s while playing)
+        "/api/sys/usage",       # CPU/GPU usage poll (every 3 s while enabled)
         "/api/favs/touch",      # bookkeeping write on each Play
         "/api/history",         # history record on each named Play
     )
@@ -1279,6 +1294,29 @@ class Handler(http.server.BaseHTTPRequestHandler):
         except (OSError, subprocess.TimeoutExpired):
             pass
 
+    @staticmethod
+    def _classify_proxy_end(reason: str, rc) -> str:
+        """Turn the internal end_reason / ffmpeg rc into a short, plain
+        cause the user can act on. Shown in the video status line when a
+        stream dies (the browser otherwise only sees a generic stall)."""
+        r = reason or ""
+        if "browser disconnected" in r:
+            # mpegts.js dropped the fetch — almost always the MSE
+            # SourceBuffer filling at a high pre-roll buffer (nothing
+            # plays during pre-roll, so autoCleanup can't evict) or a
+            # deliberate Stop / tab close.
+            return ("the browser dropped the connection — if it stalled at a "
+                    "high buffer value, the player buffer overflowed; lower "
+                    "the Player buffer setting")
+        if rc == 255 or "corrupt" in r:
+            return ("the stream source is unstable or corrupt "
+                    "(engine peer loss / bad input)")
+        if "stdout EOF" in r and rc == 0:
+            return "the stream ended or the engine closed the session"
+        if "upstream read failed" in r:
+            return "the ffmpeg proxy stopped unexpectedly"
+        return "see the web log (proxy: ended …) for the ffmpeg reason"
+
     def _handle_stream_proxy(self, tail: str) -> None:
         """GET /api/stream/proxy/<HEX40>
 
@@ -1333,6 +1371,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
             prior_cmd = Handler._active_command_url
             Handler._active_proc = None
             Handler._active_command_url = None
+            if prior is not None:
+                # Superseding an existing stream is a deliberate kill too —
+                # mark it so its teardown reads as "superseded", not a crash.
+                Handler._intentional_stops.add(prior)
         if prior is not None:
             Handler._kill_proc(prior)
             _release_engine_session(prior_cmd)
@@ -1522,19 +1564,53 @@ class Handler(http.server.BaseHTTPRequestHandler):
             # us the final return code, or the negative signal that
             # killed it.
             rc = proc.poll()
+            # Was this teardown a deliberate kill (user Stop / bump)? If so
+            # the "browser disconnected" the loop saw is just the client
+            # tearing down — report a clean stop and skip the stderr dump.
+            with Handler._active_lock:
+                intentional = proc in Handler._intentional_stops
+                Handler._intentional_stops.discard(proc)
+            if intentional:
+                end_reason = "stopped (user or superseded by a new stream)"
+                hint = "normal stop — no action needed"
+            else:
+                # Classify once: reused for the log line AND the browser
+                # post-mortem. Putting the plain-language cause in the log
+                # too means the web-log tab reads "…likely buffer overflow"
+                # instead of a bare BrokenPipeError the operator must decode.
+                hint = Handler._classify_proxy_end(end_reason, rc)
             _log("proxy",
                  "ended cid=%s duration=%.0fs bytes=%d (%.2f MB/s) "
-                 "reason='%s' ffmpeg_rc=%s",
+                 "reason='%s' ffmpeg_rc=%s — %s",
                  cid, elapsed, bytes_sent,
                  (bytes_sent / 1_000_000 / elapsed) if elapsed > 0 else 0.0,
-                 end_reason, rc)
-            # If ffmpeg exited on its own (not because we SIGTERMed it
-            # to bump for a new request) and not cleanly, dump its
-            # stderr tail. SIGTERM gives rc == -15; that's normal.
-            if rc not in (0, -15, None) and stderr_tail:
+                 end_reason, rc, hint)
+            # Dump ffmpeg's stderr tail ONLY for an unexpected, self-inflicted
+            # death worth post-morteming. Skip it when WE killed the process
+            # — a clean SIGTERM (rc -15), the SIGKILL escalation (rc -9), or
+            # any deliberate stop — since that stderr is just teardown noise
+            # ("Immediate exit requested"). A genuine crash (e.g. rc 255 on
+            # corrupt input) still exits on its own and still gets dumped.
+            if rc not in (0, -15, -9, None) and not intentional and stderr_tail:
                 tail_text = "\n  ".join(list(stderr_tail))
                 _log("proxy", "cid=%s ffmpeg stderr tail (last %d lines):\n  %s",
                      cid, len(stderr_tail), tail_text)
+            # Post-mortem for the browser (GET /api/stream/last-error).
+            # Built as one dict then swapped in atomically — a reader on
+            # another thread never sees a half-populated record. The
+            # frontend filters by cid + recency, so recording every end
+            # (including a clean Stop) is fine; it only surfaces the
+            # reason when it lines up with a stall it actually saw.
+            Handler._last_proxy_end = {
+                "available": True,
+                "cid": cid,
+                "reason": end_reason,
+                "rc": rc,
+                "bytes": bytes_sent,
+                "duration_s": round(elapsed),
+                "at": time.time(),
+                "hint": hint,
+            }
             with Handler._active_lock:
                 if Handler._active_proc is proc:
                     Handler._active_proc = None
@@ -1750,6 +1826,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self._handle_static("favicon.ico")
         elif path.startswith("/api/stream/proxy/"):
             return self._handle_stream_proxy(self.path[len("/api/stream/proxy/"):])
+        elif path == "/api/stream/last-error":
+            # Post-mortem of the most recent proxy teardown, so the video
+            # status line can report WHY a stream stalled/ended instead of
+            # a generic note. See Handler._last_proxy_end.
+            return self._send_json(200, Handler._last_proxy_end
+                                   or {"available": False})
         elif path == "/api/engine/image":
             if not self.image_mgr:
                 return self._error(404, "image management disabled")
@@ -1883,6 +1965,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 proxy_cmd = Handler._active_command_url
                 Handler._active_proc = None
                 Handler._active_command_url = None
+                if proxy_proc is not None:
+                    # Flag this kill as deliberate so the streaming thread's
+                    # teardown logs a clean stop, not a stderr-tail dump.
+                    Handler._intentional_stops.add(proxy_proc)
             if proxy_proc is not None:
                 Handler._kill_proc(proxy_proc)
                 # Explicit engine release so the next external player

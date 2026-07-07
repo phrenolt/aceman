@@ -4,12 +4,43 @@
 import { $ } from '../../shared/dom.js';
 import { api } from '../../shared/api.js';
 import { KEYS } from '../../lib/storage_keys.js';
-import { bufferLabel } from './lib/playback_buffer.js';
+import { bufferLabel, clampBuffer, BUFFER_DEFAULT } from './lib/playback_buffer.js';
 import { notifyRestartNeeded } from './playback.js';
 
 export function initPlaybackControls() {
   initStatsToggle();
   initBufferSlider();
+}
+
+// The buffer-persist steps, factored out so the slider handlers and
+// setPlaybackBuffer share one implementation (the slider splits them: local
+// on every drag tick, server only on release). clampBuffer (the canonical
+// [0,60] clamp, also used by getPlaybackBuffer) keeps both paths consistent.
+// Slider value + read-out label + localStorage.
+function _persistBufferLocal(v) {
+  const bufSlider = $('playback-buffer');
+  const bufOut    = $('playback-buffer-out');
+  if (bufSlider) bufSlider.value = String(v);
+  if (bufOut) bufOut.textContent = bufferLabel(v, 60);
+  localStorage.setItem(KEYS.PLAYBACK_BUFFER, String(v));
+}
+// Server config (config.json:buffer_secs) so the aceman CLI's external
+// player uses the same seconds. Best-effort.
+function _persistBufferServer(v) {
+  api('/api/config', {
+    method: 'POST', body: JSON.stringify({ buffer_secs: v }),
+  }).catch(() => {});
+}
+
+// Set the pre-roll buffer programmatically (clamped 0–60), persisting both
+// locally and to the server. Used by the buffer-overflow notice's "Reset to
+// default" action; reusable anywhere a reset is needed. Defaults to
+// BUFFER_DEFAULT when called with no value.
+export function setPlaybackBuffer(n = BUFFER_DEFAULT) {
+  const v = clampBuffer(n);
+  _persistBufferLocal(v);
+  _persistBufferServer(v);
+  return v;
 }
 
 // Stats visibility is a preference (statsHidden) AND a precondition: the
@@ -67,30 +98,19 @@ function initStatsToggle() {
 // In-tab pre-roll buffer slider. 0 = Off (live edge). Read at play time.
 function initBufferSlider() {
   const bufSlider = $('playback-buffer');
-  const bufOut    = $('playback-buffer-out');
   if (!bufSlider) return;
   bufSlider.max = '60';
-  const storedVal = parseInt(localStorage.getItem(KEYS.PLAYBACK_BUFFER) || '10', 10);
-  bufSlider.value = String(Math.min(Math.max(storedVal, 0), 60));
-  if (bufOut) bufOut.textContent = bufferLabel(bufSlider.value, 60);
+  const v = clampBuffer(localStorage.getItem(KEYS.PLAYBACK_BUFFER) || '10');
+  _persistBufferLocal(v);
   // Seed the server from localStorage on load so the aceman CLI's
   // buffer_secs isn't stale when the slider goes untouched.
-  api('/api/config', {
-    method: 'POST',
-    body: JSON.stringify({ buffer_secs: Math.min(Math.max(storedVal, 0), 60) }),
-  }).catch(() => {});
-  bufSlider.oninput = () => {
-    const n = Math.min(Math.max(parseInt(bufSlider.value, 10), 0), 60);
-    localStorage.setItem(KEYS.PLAYBACK_BUFFER, String(n));
-    if (bufOut) bufOut.textContent = bufferLabel(n, 60);
-  };
-  // On release, persist server-side (config.json:buffer_secs) so the
-  // aceman CLI applies the same seconds to the external player cache.
+  _persistBufferServer(v);
+  // Drag: local only (cheap, every tick — no server spam).
+  bufSlider.oninput  = () => _persistBufferLocal(clampBuffer(bufSlider.value));
+  // Release: persist server-side so the aceman CLI applies the same seconds
+  // to the external player cache, and remind that it takes effect next start.
   bufSlider.onchange = () => {
-    const n = Math.min(Math.max(parseInt(bufSlider.value, 10), 0), 60);
-    api('/api/config', {
-      method: 'POST', body: JSON.stringify({ buffer_secs: n }),
-    }).catch(() => {});
-    notifyRestartNeeded();   // buffer change applies on next stream start
+    _persistBufferServer(clampBuffer(bufSlider.value));
+    notifyRestartNeeded();
   };
 }

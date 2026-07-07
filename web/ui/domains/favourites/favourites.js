@@ -24,7 +24,6 @@ import { runModal } from '../../lib/modal.js';
 import { markSearchRowSaved, refreshSearchResultsIfAny } from '../search/index.js';
 import { current, play } from '../playback/index.js';
 import { loadHistory } from '../history/index.js';
-import { buildSavedBadge } from '../library/index.js';
 import { pageSize, removeFromHistoryOnSave } from '../../lib/library_settings.js';
 
 // In-memory cached list + filter/page state. allFavs is the full set from
@@ -243,26 +242,34 @@ function maybeDropFromHistory(cid) {
 
 export function updateSaveButton() {
   const btn = $('save-btn');
+  const star = $('playback-fav-star');
+  const title = $('playback-title');
+  // Resolve the favourite once and reuse it (both here and in
+  // describeSaveButton) rather than scanning allFavs twice.
+  const fav = current ? findFavouriteByCid(allFavs, current.cid) : null;
+  const saved = !!fav;
+  // Saved state lives next to the now-playing title as a ★ (no duplicate
+  // "<name> ★" badge). The title itself is the affordance: single-click
+  // copies the Ace ID, double-click opens it in the Favourites tab.
+  if (star) star.style.display = saved ? '' : 'none';
+  if (title) title.title = saved
+    ? 'Click to copy the Ace ID · double-click to open in Favourites'
+    : (current ? 'Click to copy the Ace ID' : '');
   if (!btn) return;
-  const ind = $('save-indicator');
-  // Already a favourite → show the "<name> ★" mustard glyph (double-click
-  // opens it in Favourites), not a Save button.
-  const existing = current ? findFavouriteByCid(allFavs, current.cid) : null;
-  if (current && existing) {
-    btn.style.display = 'none';
-    if (ind) {
-      ind.innerHTML = '';
-      ind.appendChild(buildSavedBadge(existing.name));
-      ind.style.display = '';
-    }
+  if (saved) {
+    // Hide via visibility (reserved slot) so the play-row never reflows.
+    btn.style.visibility = 'hidden';
     return;
   }
-  if (ind) { ind.style.display = 'none'; ind.innerHTML = ''; }
-  const view = describeSaveButton(current, allFavs);
-  btn.style.display = view.visible ? '' : 'none';
-  btn.textContent = view.text;
+  // Not saved → a ★ glyph button on the play-row (matches the library's
+  // row stars), rather than a full-width "Save as favourite" text button.
+  const view = describeSaveButton(current, allFavs, fav);
+  btn.style.visibility = view.visible ? 'visible' : 'hidden';
+  setIcon(btn, 'star');
   btn.disabled = view.disabled;
-  btn.title = view.title;
+  // describeSaveButton's title is empty for the unsaved state; keep the
+  // static "Save as favourite" hint the glyph needs to explain itself.
+  btn.title = view.title || 'Save as favourite';
 }
 
 // Three-way picker for favourite name: English label, original label,

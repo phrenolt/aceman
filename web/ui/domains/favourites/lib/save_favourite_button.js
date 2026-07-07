@@ -14,9 +14,11 @@
 
 import { findFavouriteByCid } from './favourite_lookup.js';
 
-export function describeSaveButton(current, favs) {
+// `existingFav` lets a caller that already resolved the favourite pass it in
+// to avoid a second list scan; omitted, we look it up ourselves.
+export function describeSaveButton(current, favs, existingFav) {
   if (!current) return HIDDEN;
-  const fav = findFavouriteByCid(favs, current.cid);
+  const fav = existingFav !== undefined ? existingFav : findFavouriteByCid(favs, current.cid);
   if (fav) {
     return {
       visible: true,
