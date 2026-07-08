@@ -4,12 +4,18 @@ The host player-side. Talks to the engine's HTTP API, launches a local
 player, and tracks favourites in a flat file.
 
 ```
-aceman <content_id>          # 40-hex content id or acestream://<id>
-aceman --url <transport_url>
-aceman --infohash <infohash>
-aceman --fav <name…>         # play a saved favourite (case-insensitive;
-                             #   words after --fav are joined — no quotes)
-aceman --list                # list saved favourites
+aceman <content_id>          # 40-hex content id, acestream://<id>, or a saved fav name
+aceman --url <transport_url> # play a transport URL (.acelive, ...)
+aceman --infohash <infohash> # play a 40-hex BT infohash
+
+aceman fav list              # list saved favourites
+aceman fav rm <name>         # delete a favourite (alias: delete)
+aceman fav rename <old> <new># rename a saved favourite
+
+aceman engine start [--ram NG] [--cache NG] [--port N] [--p2p-port N] [--commit SHA]
+aceman engine stop
+aceman engine restart [--ram NG] [--cache NG] [--port N] [--p2p-port N] [--commit SHA]
+aceman engine status         # container + API + memory + cache + p2p
 ```
 
 ## What it does

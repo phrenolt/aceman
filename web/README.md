@@ -18,10 +18,10 @@ still gets one HTML response.
   proxy** (HTTPS-only, allow-listed host, no off-domain redirects, size
   cap, strict JSON parse, HEX40 content-id validation, Unicode bidi strip,
   result-count cap). The browser never talks to the upstream directly.
-- **Play** — clicking Play / a search row / a favourite navigates the
-  browser to `acestream://<cid>`. The OS scheme handler (installed by the
-  desktop entry) routes it to the host `aceman` shell, which spawns the
-  player and owns the engine session. The web never touches a player.
+- **Play** — clicking Play / a search row / a favourite plays the stream directly
+  in the browser by default. Alternatively, navigating to `acestream://<cid>` routes
+  through the OS scheme handler to the host `aceman` shell, which spawns an
+  external player and owns the engine session.
 - **Favourites** column — search, pagination, double-click rename,
   days-since-watched badge, delete.
 
@@ -36,9 +36,15 @@ still gets one HTML response.
 ## CLI flags
 
 ```
+--stop                           # stop the web server and the engine (wrapper only)
+--hard-refresh                   # drop cached images; rebuild on next launch (wrapper only)
+--commit <sha>                   # pin container builds to a specific git commit (wrapper only)
+--container / --native           # run in podman (default) or on the host (wrapper only)
+--disable-wsl                    # force normal mode on WSL (wrapper only)
+--open-browser                   # open UI in default browser on launch (wrapper only)
 --engine http://127.0.0.1:6878   # engine base URL
---host 127.0.0.1                 # bind host
---port 8765
+--host 127.0.0.1                 # bind host (wrapper exports this as ACE_WEB_HOST)
+--port 8765                      # listen port
 --db        ~/.config/aceman/favorites.db
 --config    ~/.config/aceman/config.json
 --broker-socket $XDG_RUNTIME_DIR/aceman/broker.sock
