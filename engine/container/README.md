@@ -60,9 +60,12 @@ themselves (notably `ACE_DETACH=1`).
 | `ACE_IMAGE`      | `localhost/acestream:vetted` | Image tag.                                                           |
 | `ACE_NAME`       | `ace`                        | Container name.                                                      |
 | `ACE_API_PORT`   | `6878`                       | Loopback-bound host port for the HTTP API. (Alias: `ACE_PORT`.)     |
+| `ACE_API_HOST`   | `127.0.0.1` (`0.0.0.0` in WSL)| Bind address for the host-side port.                                |
+| `ACE_P2P_PORT`   | unset (closed)               | Host port to publish for inbound P2P swarm. (e.g. `8621`)           |
 | `ACE_MEMORY`     | `5g`                         | `--memory` cap on the container.                                    |
 | `ACE_CACHE_SIZE` | `3g`                         | `--tmpfs` size for `/home/ace/.ACEStream`; engine self-evicts at ~90 %. |
 | `ACE_DETACH`     | `0`                          | `1` adds `-d` (background) and returns immediately.                 |
+| `ACE_COMMIT`     | `HEAD`                       | Git commit SHA to use when building the image.                       |
 | `ACE_BLOCK_TELEMETRY` | `0`                     | `1` null-routes Ace Stream's stats/telemetry hosts. **Off by default** — see note below. |
 
 ### Hardening
