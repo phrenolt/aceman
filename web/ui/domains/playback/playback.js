@@ -30,6 +30,7 @@ import { encodeTarget, isExternal } from './lib/playback_target.js';
 import { KEYS } from '../../lib/storage_keys.js';
 import { saveLastPlay, loadLastPlay, clearLastPlay } from './lib/last_played_stream.js';
 import { inBrowserPlaybackSupported } from './lib/playback_feature_detect.js';
+import { isFatalMpegtsError, isFatalVideoError } from './lib/playback_error.js';
 import { buildPlaybackOptions } from './lib/playback_options.js';
 import { buildLanStreamUrl } from './lib/lan_url.js';
 import { decidePlaybackPath } from './lib/playback_decision.js';
@@ -157,6 +158,8 @@ function startInBrowserPlayback(cid) {
   _playStartErrorAt = 0;    // until the baseline snapshot below resolves
   _snapshotLastErrorBaseline();
   _streamByteRate = null;   // fresh bitrate estimate for this stream
+  _lastByteFlowAt = 0;      // fresh feed-flow tracking for this stream
+  _fatalPlaybackHandled = false;   // fresh play — re-arm the fatal-error guard
   const v = $('pb-video');
   const status = $('pb-video-status');
   v.style.display = '';
@@ -224,6 +227,12 @@ function startInBrowserPlayback(cid) {
   v.onerror = () => {
     const e = v.error;
     if (e) console.warn('[video] error code=' + e.code + ' message="' + e.message + '"');
+    // A DECODE (3) / SRC_NOT_SUPPORTED (4) error means these bytes can't be
+    // played — retrying re-appends the same undecodable data and mpegts.js
+    // loops forever. Give up cleanly and steer the user to the external player.
+    if (e && isFatalVideoError(e.code)) {
+      _failPlaybackFatal('Playback error (code ' + e.code + ')');
+    }
   };
 
   if (window.mpegts.Events) {
@@ -245,6 +254,9 @@ function startInBrowserPlayback(cid) {
         // converges to the encode bitrate that actually fills the buffer.
         const r = stats.speed * 1024;        // KB/s → bytes/s
         _streamByteRate = _streamByteRate == null ? r : _streamByteRate * 0.9 + r * 0.1;
+        // Mark real feed activity so the pre-roll freeze detector can tell an
+        // overflow from a stall (see _preRollBuffer).
+        if (stats.speed >= _MIN_FLOW_KBPS) _lastByteFlowAt = performance.now();
       }
       if (stats.decodedFrames != null) {
         const now = performance.now();
@@ -262,11 +274,19 @@ function startInBrowserPlayback(cid) {
       _stopBufferHealth();
       _clearStall();   // an mpegts error supersedes any pending stall note
       console.warn('[mpegts]', type, detail);
-      // Route through the post-mortem so a proxy death that surfaces here (a
-      // NetworkError, not a DOM stall) still gets the server's WHY and the
+      const label = 'Stream error: ' + type
+          + (detail && detail.code ? ' (code ' + detail.code + ')' : '');
+      // A MediaError is an undecodable format/codec: mpegts.js would keep
+      // re-appending into a dead SourceBuffer ("… no longer usable" loop). Tear
+      // the player down instead and point at the external player.
+      if (isFatalMpegtsError(type)) {
+        _failPlaybackFatal(label);
+        return;
+      }
+      // Recoverable (NetworkError / OtherError): route through the post-mortem
+      // so a proxy death that surfaces here still gets the server's WHY and the
       // one-click buffer-reset recovery — same as the hard-stall path.
-      _reportStreamDeath('Stream error: ' + type
-          + (detail && detail.code ? ' (code ' + detail.code + ')' : ''));
+      _reportStreamDeath(label);
     });
   }
 
@@ -350,6 +370,15 @@ const PREROLL_STALL_MS = 12000;
 // STATISTICS_INFO. Module-scoped so the overflow recorder can read it; reset
 // per play in startInBrowserPlayback.
 let _streamByteRate = null;
+// performance.now() of the last time real bytes were arriving from the proxy
+// (download speed above _MIN_FLOW_KBPS). Lets the pre-roll freeze detector tell
+// a genuine SourceBuffer overflow (bytes still arriving, fill not growing) from
+// an engine feed stall (no bytes arriving) — see _preRollBuffer. 0 = never yet.
+let _lastByteFlowAt = 0;
+// Below this download rate we treat the feed as "not flowing" (a stalled engine
+// trickles ~0; a live stream flows at hundreds of KB/s), so the threshold has
+// wide daylight and needn't be precise.
+const _MIN_FLOW_KBPS = 8;
 
 // Learned SourceBuffer byte ceiling, cached so the 1 s render ticker isn't
 // re-reading localStorage every tick for a value that only changes on an
@@ -570,18 +599,32 @@ function _preRollBuffer(v, status, target, onRelease) {
     const have = Math.floor(bufferedAhead(v.buffered, v.currentTime));
     const now = (typeof performance !== 'undefined' ? performance.now() : Date.now());
     if (have > lastHave) { lastHave = have; frozenSince = now; }
-    // Fill stopped advancing well short of target for PREROLL_STALL_MS:
-    // the browser's MSE SourceBuffer hit its memory ceiling (nothing plays
-    // during pre-roll, so autoCleanup can't evict). Warn with the cause +
-    // a one-click buffer reset, then release — starting playback lets the
-    // playhead advance so the buffer can drain, instead of freezing to the
-    // safety cap and stranding the user on "Buffering 54/60 s…".
+    // Fill stopped advancing well short of target for PREROLL_STALL_MS. Two
+    // very different causes look identical here (the fill just stops growing),
+    // so disambiguate by whether bytes are still arriving from the proxy:
+    //
+    //   * bytes STILL flowing while the fill won't grow → the browser's MSE
+    //     SourceBuffer hit its memory ceiling (nothing plays during pre-roll,
+    //     so autoCleanup can't evict). That's a real, measured ceiling: warn
+    //     with the cause + a one-click buffer reset, feed it to "max ~N s",
+    //     and release so the playhead advances and the buffer can drain.
+    //   * bytes NOT flowing → the engine feed stalled, which is NOT a buffer
+    //     problem. Don't cry "lower your buffer" (the old false alarm); keep
+    //     waiting with a gentle note until the feed resumes or the safety cap
+    //     releases us.
     else if (have > 0 && frozenSince && now - frozenSince > PREROLL_STALL_MS) {
-      // The fill froze because the SourceBuffer is full at `have` seconds —
-      // that's a real, measured ceiling. Feed it back so "max ~N s" learns.
-      _recordObservedMseCap(have);
-      _bufferOverflowNotice(have, target);
-      release();
+      const bytesStillArriving = _lastByteFlowAt > frozenSince;
+      if (bytesStillArriving) {
+        _recordObservedMseCap(have);
+        _bufferOverflowNotice(have, target);
+        release();
+        return;
+      }
+      // Engine feed stalled — hold and wait (idempotent: this branch just
+      // repaints until `have` grows again or the safety-cap timeout fires).
+      status.textContent = 'Buffering ' + Math.min(have, target) + '/' + target
+        + ' s… waiting for the stream';
+      status.className = 'gate-hint';
       return;
     }
     status.textContent = 'Buffering ' + Math.min(have, target) + '/' + target + ' s…';
@@ -634,6 +677,39 @@ function stopInBrowserPlayback() {
   }
 }
 
+// A fatal in-browser playback failure: the channel's container/codec can't be
+// decoded (NS_ERROR_FAILURE / "could not be decoded"). Retrying re-appends the
+// undecodable data, so mpegts.js loops forever throwing "SourceBuffer … no
+// longer usable". Tear the player down — which also clears livePlaybackTarget,
+// so nothing (the probe included) still counts this as "playing" — and point
+// the user at the external player, which decodes formats MSE can't. Fires once
+// per play; both the native <video> onerror and mpegts' ERROR event call it.
+let _fatalPlaybackHandled = false;
+function _failPlaybackFatal(why) {
+  if (_fatalPlaybackHandled) return;
+  _fatalPlaybackHandled = true;
+  // Defer the teardown one tick. Destroying/detaching the player synchronously
+  // from inside the media-error (or a SourceBuffer `updateend`) callback yanks
+  // the media element out from under a SourceBuffer op that's still finishing,
+  // and mpegts.js then dereferences the now-null video
+  // (_onSourceBufferUpdateEnd → "e.video is null"). Letting the current event
+  // settle first avoids that. mpegts stops feeding on a fatal MediaError, so a
+  // one-tick delay can't reopen the old append loop.
+  const msg = 'This channel can’t play in the browser (its video stream stops '
+    + 'decoding). Try the external player (VLC / mpv).';
+  setTimeout(() => {
+    stopInBrowserPlayback();          // destroys the player, clears livePlaybackTarget
+    const status = $('pb-video-status');
+    if (status) {
+      status.textContent = why + ' — ' + msg;
+      status.className = 'gate-hint warn';
+    }
+    // The status line sits inside the (now video-less) card and is easy to
+    // miss — also raise a top notice so the stop is never silent.
+    showNotice({ id: 'playback-unplayable', message: '⚠ ' + msg });
+  }, 0);
+}
+
 // Updates the channel-name line above the playback URL. Empty primary
 // hides the row entirely so a cid-typed-by-hand session doesn't get a
 // misleading placeholder.
@@ -645,13 +721,27 @@ export function setTabTitle(name) {
   document.title = name ? `${base} - ${name}` : base;
 }
 
-// One reused, auto-dismissing top toast for the small copy confirmations
-// (Ace ID, device link). Single id → only ever one banner, one timer.
-let _toastTimer = null;
+// One reused, auto-dismissing top toast for the small confirmations (Ace ID /
+// device-link copy, "already playing"). Single id → only ever one banner; it
+// fades out after 2s (showNotice owns the timer + fade).
 function _toast(message) {
-  showNotice({ id: 'aceman-toast', message });
-  clearTimeout(_toastTimer);
-  _toastTimer = setTimeout(() => dismissNotice('aceman-toast'), 2500);
+  showNotice({ id: 'aceman-toast', message, autoDismissMs: 2000 });
+}
+
+// True when `cid` is the channel actually playing right now — a live target AND
+// the active channel. Lets a row re-click no-op instead of tearing down and
+// restarting a working stream.
+export function isCurrentlyPlaying(cid) {
+  return !!(livePlaybackTarget && current && current.cid && cid
+    && current.cid.toLowerCase() === String(cid).toLowerCase());
+}
+
+// Row-click guard: if `cid` is already playing, flash a brief toast and return
+// true (the caller should bail); otherwise return false so it proceeds to play.
+export function notifyIfAlreadyPlaying(cid) {
+  if (!isCurrentlyPlaying(cid)) return false;
+  _toast('Already playing.');
+  return true;
 }
 
 // Copy the playing cid to the clipboard, with a brief top notice. The Watch

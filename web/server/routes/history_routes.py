@@ -28,8 +28,13 @@ def record_history(req: Request, ctx: RouteContext) -> Response:
     name = (req.body.get("name") or "").strip()
     if not HEX40.match(cid) or not name:
         return Response.error(400, "cid (40 hex) and non-empty name required")
-    ctx.history_store.record(cid, name)
-    return Response.json(200, {"ok": True})
+    # Recording can be switched off in Library settings (server config). When
+    # off, accept the request but write nothing — existing entries are kept.
+    if ctx.config and not ctx.config.get("history_recording", True):
+        return Response.json(200, {"ok": True, "recorded": False})
+    cap = ctx.config.get("history_max_rows") if ctx.config else None
+    ctx.history_store.record(cid, name, cap=cap)
+    return Response.json(200, {"ok": True, "recorded": True})
 
 
 def delete_history(req: Request, ctx: RouteContext) -> Response:

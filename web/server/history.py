@@ -16,7 +16,8 @@ import threading
 
 from .constants import HEX40
 
-_MAX_ROWS = 500
+_MAX_ROWS = 500          # default cap; overridable per-call from config
+_MIN_ROWS = 50           # never trim below this even if a bad cap is passed
 
 
 class HistoryStore:
@@ -46,9 +47,15 @@ class HistoryStore:
         finally:
             c.close()
 
-    def record(self, cid: str, name: str) -> None:
+    def record(self, cid: str, name: str, cap: int | None = None) -> None:
         if not name or not HEX40.match(cid):
             return
+        # `cap` comes from user config; floor it so a nonsense value can't wipe
+        # the table down to nothing. None → the built-in default.
+        try:
+            cap = max(_MIN_ROWS, int(cap)) if cap is not None else _MAX_ROWS
+        except (TypeError, ValueError):
+            cap = _MAX_ROWS
         with self._lock, self._conn() as c:
             c.execute(
                 "INSERT INTO watch_history(cid, name, played_at) "
@@ -62,7 +69,7 @@ class HistoryStore:
                 "DELETE FROM watch_history WHERE cid NOT IN ("
                 "  SELECT cid FROM watch_history "
                 "  ORDER BY played_at DESC LIMIT ?)",
-                (_MAX_ROWS,),
+                (cap,),
             )
 
     def list(self, limit: int | None = None) -> list[dict]:

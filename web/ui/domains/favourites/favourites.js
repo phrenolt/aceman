@@ -15,6 +15,8 @@ import { $, showError, showBusy, hideBusy, showConfirm } from '../../shared/dom.
 import { api } from '../../shared/api.js';
 import { setIcon } from '../../shared/icons.js';
 import { daysSinceLabel } from './lib/last_watched_label.js';
+import { sortFavourites } from './lib/fav_sort.js';
+import { formatSqliteUtcToLocal } from '../history/lib/sqlite_time.js';
 import { uniqueFavouriteName } from './lib/favourite_names.js';
 import { describeSaveButton } from './lib/save_favourite_button.js';
 import { findFavouriteByCid } from './lib/favourite_lookup.js';
@@ -22,15 +24,22 @@ import { extractExistingName } from './lib/api_errors.js';
 import { paginate } from '../../lib/pagination.js';
 import { runModal } from '../../lib/modal.js';
 import { markSearchRowSaved, refreshSearchResultsIfAny } from '../search/index.js';
-import { current, play } from '../playback/index.js';
+import { current, play, notifyIfAlreadyPlaying } from '../playback/index.js';
 import { loadHistory } from '../history/index.js';
-import { pageSize, removeFromHistoryOnSave } from '../../lib/library_settings.js';
+import { pageSize, removeFromHistoryOnSave, favSort, relativeTimes, skipDeleteConfirm } from '../../lib/library_settings.js';
 
 // In-memory cached list + filter/page state. allFavs is the full set from
 // the store; the renderer slices it by search and page.
 export let allFavs = [];
 let favSearch = '';
 let favPage = 0;
+
+// {cid, name} for every favourite (not just the visible page) — the probing
+// domain's "Probe all favourites" walks this so off-page channels get a
+// persisted verdict too.
+export function favouriteItems() {
+  return allFavs.map(f => ({ cid: f.cid, name: f.name }));
+}
 
 export async function loadFavs() {
   allFavs = await api('/api/favs');
@@ -48,8 +57,15 @@ function filteredFavs() {
   return q ? allFavs.filter(f => f.name.toLowerCase().includes(q)) : allFavs;
 }
 
+// The "watched N days ago" cell, or an absolute local stamp when relative
+// times are off. Empty last_played reads "never watched" either way.
+function lastPlayedLabel(stamp) {
+  if (relativeTimes()) return daysSinceLabel(stamp);
+  return stamp ? formatSqliteUtcToLocal(stamp) : 'never watched';
+}
+
 function renderFavs() {
-  const filtered = filteredFavs();
+  const filtered = sortFavourites(filteredFavs(), favSort());
   const p = paginate(filtered.length, favPage, pageSize());
   favPage = p.page;
 
@@ -77,6 +93,7 @@ export function favPageNext() { favPage++; renderFavs(); }
 function renderFavRow(f) {
   const row = document.createElement('div');
   row.className = 'fav';
+  row.dataset.cid = f.cid;   // lets the probing domain health-check this row
 
   const wrap = document.createElement('div');
   wrap.className = 'fav-name-wrap';
@@ -88,12 +105,13 @@ function renderFavRow(f) {
 
   const last = document.createElement('span');
   last.className = 'fav-last';
-  last.textContent = daysSinceLabel(f.last_played);
+  last.textContent = lastPlayedLabel(f.last_played);
 
   wrap.appendChild(name);
   wrap.appendChild(last);
 
   const triggerPlay = async () => {
+    if (notifyIfAlreadyPlaying(f.cid)) return;   // re-click on the live row: no-op
     row.classList.add('fav-playing');
     $('cid-input').value = f.cid;
     showBusy('Starting…');
@@ -141,6 +159,11 @@ function startEditName(f, span) {
   input.type = 'text';
   input.className = 'fav-edit-input';
   input.value = f.name;
+  // The input lives inside the row whose click starts playback; keep clicks
+  // (caret placement, drag-select) from bubbling up and triggering a play.
+  input.onclick = e => e.stopPropagation();
+  input.onmousedown = e => e.stopPropagation();
+  input.ondblclick = e => e.stopPropagation();
   span.replaceWith(input);
   input.focus();
   input.select();
@@ -177,7 +200,7 @@ async function renameFav(oldName, newName) {
 }
 
 async function deleteFav(name) {
-  if (!(await showConfirm({
+  if (!skipDeleteConfirm() && !(await showConfirm({
     title: 'Delete favourite',
     message: `Delete favourite "${name}"?`,
     confirmText: 'Delete',

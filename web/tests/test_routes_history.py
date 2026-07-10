@@ -30,11 +30,32 @@ class TestHistoryRoutes(unittest.TestCase):
 
     def test_record_history_success(self):
         mock_store = MagicMock()
-        ctx = RouteContext(history_store=mock_store)
+        ctx = RouteContext(history_store=mock_store)  # no config → cap defaults
         req = Request(method="POST", path="/api/history", body={"cid": "0" * 40, "name": "foo"})
         resp = record_history(req, ctx)
         self.assertEqual(resp.status, 200)
-        mock_store.record.assert_called_with("0" * 40, "foo")
+        mock_store.record.assert_called_with("0" * 40, "foo", cap=None)
+
+    def test_record_history_passes_configured_cap(self):
+        mock_store = MagicMock()
+        config = MagicMock()
+        config.get.side_effect = lambda k, d=None: {
+            "history_recording": True, "history_max_rows": 120}.get(k, d)
+        ctx = RouteContext(history_store=mock_store, config=config)
+        req = Request(method="POST", path="/api/history", body={"cid": "0" * 40, "name": "foo"})
+        resp = record_history(req, ctx)
+        self.assertEqual(resp.status, 200)
+        mock_store.record.assert_called_with("0" * 40, "foo", cap=120)
+
+    def test_record_history_skipped_when_recording_off(self):
+        mock_store = MagicMock()
+        config = MagicMock()
+        config.get.side_effect = lambda k, d=None: {"history_recording": False}.get(k, d)
+        ctx = RouteContext(history_store=mock_store, config=config)
+        req = Request(method="POST", path="/api/history", body={"cid": "0" * 40, "name": "foo"})
+        resp = record_history(req, ctx)
+        self.assertEqual(resp.status, 200)          # accepted, but…
+        mock_store.record.assert_not_called()       # …nothing written
 
     def test_delete_history(self):
         mock_store = MagicMock()

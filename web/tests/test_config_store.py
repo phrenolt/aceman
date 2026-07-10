@@ -19,7 +19,17 @@ class TestConfigStore(unittest.TestCase):
         self.assertEqual(config.get("engine_autostart"), True)
         self.assertEqual(config.get("default_player"), "")
         self.assertEqual(config.get("buffer_secs"), 10)
+        self.assertEqual(config.get("history_recording"), True)
+        self.assertEqual(config.get("history_max_rows"), 500)
         self.assertEqual(config.get("unknown_key", "fallback"), "fallback")
+
+    def test_history_config_update_and_types(self):
+        config = Config(self.config_path)
+        new_state = config.update({"history_recording": False, "history_max_rows": 200})
+        self.assertEqual(new_state["history_recording"], False)
+        self.assertEqual(new_state["history_max_rows"], 200)
+        with self.assertRaisesRegex(ValueError, "history_recording must be bool"):
+            config.update({"history_recording": "no"})
 
     def test_load_existing_valid(self):
         self.config_path.write_text(json.dumps({"engine_autostart": False, "buffer_secs": 20}))
