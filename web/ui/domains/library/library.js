@@ -12,10 +12,17 @@
 //
 // The pure tab normaliser lives in lib/active_tab.js and is unit-tested.
 
-import { $ } from '../../shared/dom.js';
+import { $, showConfirm } from '../../shared/dom.js';
+import { api } from '../../shared/api.js';
 import { ICONS } from '../../shared/icons.js';
 import { KEYS } from '../../lib/storage_keys.js';
-import { pageSize, setPageSize, removeFromHistoryOnSave, setRemoveFromHistoryOnSave } from '../../lib/library_settings.js';
+import {
+  pageSize, setPageSize, removeFromHistoryOnSave, setRemoveFromHistoryOnSave,
+  resetLibraryDefaults,
+  favSort, setFavSort,
+  libraryDefaultTab, setLibraryDefaultTab,
+  relativeTimes, setRelativeTimes, skipDeleteConfirm, setSkipDeleteConfirm,
+} from '../../lib/library_settings.js';
 import { LIBRARY_TABS, normalizeTab } from './lib/active_tab.js';
 import { loadFavs, setFavSearch } from '../favourites/index.js';
 import { loadHistory } from '../history/index.js';
@@ -84,12 +91,60 @@ function refreshActiveTab() {
   else refreshSearchResultsIfAny();
 }
 
-// ---- ⚙ settings modal --------------------------------------------------
+// ---- ⚙ settings modal (immediate-apply, no Save) -----------------------
+// Watch-history cap bounds — mirror the modal's min/max and the server's
+// history_max_rows default (500).
+const HISTORY_CAP_MIN = 50;
+const HISTORY_CAP_MAX = 5000;
+const HISTORY_CAP_DEFAULT = 500;
+
+function clampHistoryCap(raw, def = HISTORY_CAP_DEFAULT) {
+  const n = parseInt(raw, 10);
+  if (!Number.isFinite(n)) return def;
+  return Math.min(Math.max(n, HISTORY_CAP_MIN), HISTORY_CAP_MAX);
+}
+
+// The two watch-history controls (#record + cap) are server-backed
+// (config.json), unlike the localStorage-backed rest. Reflect the live values
+// on open (async — fills in once /api/config resolves).
+async function reflectHistoryConfig() {
+  let cfg;
+  try { cfg = await api('/api/config'); } catch (_) { return; }
+  if (!cfg || typeof cfg !== 'object') return;
+  const rec = $('setting-record-history');
+  if (rec) rec.checked = cfg.history_recording !== false;   // default on
+  const cap = $('setting-history-cap');
+  if (cap) cap.value = String(clampHistoryCap(cfg.history_max_rows));
+}
+
+// Clamp the cap field, reflect it, and persist to the server config.
+function commitHistoryCap() {
+  const cap = $('setting-history-cap');
+  if (!cap) return;
+  const n = clampHistoryCap(cap.value);
+  cap.value = String(n);
+  api('/api/config', { method: 'POST', body: JSON.stringify({ history_max_rows: n }) }).catch(() => {});
+}
+
+// Themed ▲/▼ stepper for the cap field (native spinner is un-themable).
+function stepHistoryCap(delta) {
+  const cap = $('setting-history-cap');
+  if (!cap) return;
+  const step = Number(cap.step) || 1;
+  cap.value = String((Number(cap.value) || 0) + delta * step);
+  commitHistoryCap();       // clamps + persists
+}
+
 export function openLibrarySettings() {
   const cb = $('setting-remove-on-save');
   const ps = $('setting-page-size');
   if (cb) cb.checked = removeFromHistoryOnSave();
   if (ps) ps.value = String(pageSize());
+  const fs = $('setting-fav-sort'); if (fs) fs.value = favSort();
+  const dt = $('setting-default-tab'); if (dt) dt.value = libraryDefaultTab();
+  const rt = $('setting-relative-times'); if (rt) rt.checked = relativeTimes();
+  const sd = $('setting-skip-delete-confirm'); if (sd) sd.checked = skipDeleteConfirm();
+  reflectHistoryConfig();
   const modal = $('library-settings-modal');
   if (modal) modal.style.display = 'flex';
 }
@@ -99,12 +154,29 @@ export function closeLibrarySettings() {
   if (modal) modal.style.display = 'none';
 }
 
-export function saveLibrarySettings() {
-  const cb = $('setting-remove-on-save');
+// Persist the page-size field and re-render the active tab. Called on every
+// edit (typing + ▲/▼ steppers) — there's nothing to "save".
+function applyPageSize() {
   const ps = $('setting-page-size');
-  if (cb) setRemoveFromHistoryOnSave(cb.checked);
-  if (ps) setPageSize(ps.value);
-  closeLibrarySettings();
+  if (ps) { setPageSize(ps.value); ps.value = String(pageSize()); }
+  refreshActiveTab();
+}
+
+export async function resetLibrarySettings() {
+  if (!(await showConfirm({
+    title: 'Reset to defaults',
+    message: 'Restore all Library and probe settings to their defaults? '
+           + 'This does not touch your favourites, history, or the can’t-play log.',
+    confirmText: 'Reset',
+    danger: true,
+  }))) return;
+  resetLibraryDefaults();
+  // The watch-history controls live server-side; reset them there too.
+  await api('/api/config', {
+    method: 'POST',
+    body: JSON.stringify({ history_recording: true, history_max_rows: HISTORY_CAP_DEFAULT }),
+  }).catch(() => {});
+  openLibrarySettings();   // reflect the restored values (re-reads server config)
   refreshActiveTab();
 }
 
@@ -123,11 +195,48 @@ export function initLibrary() {
   document.querySelectorAll('.library-tab').forEach(btn => {
     btn.onclick = () => showTab(btn.dataset.tab);
   });
+  // Settings apply immediately (no Save): steppers + typing persist page size,
+  // the checkbox persists on toggle.
   const up = $('setting-page-size-up');
   const down = $('setting-page-size-down');
-  if (up) up.onclick = () => stepPageSize(1);
-  if (down) down.onclick = () => stepPageSize(-1);
-  let stored = '';
-  try { stored = localStorage.getItem(KEYS.LIBRARY_TAB) || ''; } catch (_) { /* private mode */ }
-  showTab(normalizeTab(stored));
+  if (up) up.onclick = () => { stepPageSize(1); applyPageSize(); };
+  if (down) down.onclick = () => { stepPageSize(-1); applyPageSize(); };
+  const ps = $('setting-page-size');
+  if (ps) ps.onchange = applyPageSize;
+  const rem = $('setting-remove-on-save');
+  if (rem) rem.onchange = () => setRemoveFromHistoryOnSave(rem.checked);
+
+  // Browse ordering / display — persist on change, then re-render the panel so
+  // the new order/format shows immediately.
+  const fs = $('setting-fav-sort');
+  if (fs) fs.onchange = () => { setFavSort(fs.value); refreshActiveTab(); };
+  const dt = $('setting-default-tab');
+  if (dt) dt.onchange = () => setLibraryDefaultTab(dt.value);
+  const rt = $('setting-relative-times');
+  if (rt) rt.onchange = () => { setRelativeTimes(rt.checked); refreshActiveTab(); };
+  const sd = $('setting-skip-delete-confirm');
+  if (sd) sd.onchange = () => setSkipDeleteConfirm(sd.checked);
+
+  // Watch-history controls are server-backed (config.json) — POST the patch.
+  const rec = $('setting-record-history');
+  if (rec) rec.onchange = () => {
+    api('/api/config', { method: 'POST', body: JSON.stringify({ history_recording: rec.checked }) }).catch(() => {});
+  };
+  const cap = $('setting-history-cap');
+  if (cap) cap.onchange = commitHistoryCap;
+  const capUp = $('setting-history-cap-up');
+  if (capUp) capUp.onclick = () => stepHistoryCap(1);
+  const capDown = $('setting-history-cap-down');
+  if (capDown) capDown.onclick = () => stepHistoryCap(-1);
+
+  const reset = $('library-settings-reset');
+  if (reset) reset.onclick = resetLibrarySettings;
+
+  // Which tab to open on: 'last' honours the remembered tab; anything else pins.
+  const def = libraryDefaultTab();
+  let initial = def;
+  if (def === 'last') {
+    try { initial = localStorage.getItem(KEYS.LIBRARY_TAB) || ''; } catch (_) { /* private mode */ }
+  }
+  showTab(normalizeTab(initial));
 }

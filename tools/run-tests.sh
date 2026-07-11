@@ -32,6 +32,9 @@ run_broker() {
 
 run_web() {
   echo "=== web (python) ==="
+  # test_bundle.py runs the REAL flattened bundle through Node (podman) to catch
+  # import-order TDZ / missing-name errors invisible to the ESM `js` suite. It
+  # self-skips when podman/the image is absent, so this stays host-toolchain-free.
   ( cd web && python3 -m unittest discover -s tests -t . )
 }
 

@@ -2,4 +2,4 @@
 // bootstrap) import from here, never from the files behind it —
 // this is the boundary. Internals stay private to the folder.
 
-export { loadHistory, setHistorySearch, histPagePrev, histPageNext, clearAllHistory } from './history.js';
+export { loadHistory, historyItems, setHistorySearch, histPagePrev, histPageNext, clearAllHistory } from './history.js';

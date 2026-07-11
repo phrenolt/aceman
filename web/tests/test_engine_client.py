@@ -21,6 +21,7 @@ from server.engine_client import (
     _force_engine,
     _release_engine_session,
     engine_getstream,
+    engine_poll_stat,
 )
 
 
@@ -145,13 +146,69 @@ class EngineGetstreamRefusalsTests(unittest.TestCase):
         body = json.dumps({"response": {
             "playback_url": "http://evil.example:6878/ace/r/AAAA",
             "command_url": "http://evil.example:6878/ace/cmd/AAAA",
+            "stat_url": "http://evil.example:6878/ace/stat/AAAA",
         }}).encode("utf-8")
         with mock.patch("server.engine_client.urllib.request.urlopen",
                         return_value=_fake_resp(body)):
-            pb, cmd = engine_getstream(ENGINE, GOOD_CID)
-        self.assertTrue(pb.startswith(ENGINE + "/"))
-        self.assertNotIn("evil.example", pb)
-        self.assertNotIn("evil.example", cmd)
+            pb, cmd, stat = engine_getstream(ENGINE, GOOD_CID)
+        for u in (pb, cmd, stat):
+            self.assertTrue(u.startswith(ENGINE + "/"))
+            self.assertNotIn("evil.example", u)
+
+    def test_captures_stat_url(self):
+        body = json.dumps({"response": {
+            "playback_url": "http://x/ace/r/AAAA",
+            "command_url": "http://x/ace/cmd/AAAA",
+            "stat_url": "http://x/ace/stat/AAAA",
+        }}).encode("utf-8")
+        with mock.patch("server.engine_client.urllib.request.urlopen",
+                        return_value=_fake_resp(body)):
+            _pb, _cmd, stat = engine_getstream(ENGINE, GOOD_CID)
+        self.assertEqual(stat, ENGINE + "/ace/stat/AAAA")
+
+    def test_stat_url_optional(self):
+        # An engine that omits stat_url still yields a usable session;
+        # stat is None (probe degrades to byte-flow detection only).
+        body = json.dumps({"response": {
+            "playback_url": "http://x/ace/r/AAAA",
+            "command_url": "http://x/ace/cmd/AAAA",
+        }}).encode("utf-8")
+        with mock.patch("server.engine_client.urllib.request.urlopen",
+                        return_value=_fake_resp(body)):
+            _pb, _cmd, stat = engine_getstream(ENGINE, GOOD_CID)
+        self.assertIsNone(stat)
+
+    def test_refuses_control_bytes_in_stat_url(self):
+        body = json.dumps({"response": {
+            "playback_url": "http://x/ace/r/AAAA",
+            "command_url": "http://x/ace/cmd/AAAA",
+            "stat_url": "http://x/ace/stat/A\nB",
+        }}).encode("utf-8")
+        with mock.patch("server.engine_client.urllib.request.urlopen",
+                        return_value=_fake_resp(body)):
+            with self.assertRaises(EngineError) as ctx:
+                engine_getstream(ENGINE, GOOD_CID)
+            self.assertIn("control bytes", str(ctx.exception))
+
+    def test_pid_passed_through(self):
+        body = json.dumps({"response": {
+            "playback_url": "http://x/ace/r/AAAA",
+            "command_url": "http://x/ace/cmd/AAAA",
+        }}).encode("utf-8")
+        with mock.patch("server.engine_client.urllib.request.urlopen",
+                        return_value=_fake_resp(body)) as u:
+            engine_getstream(ENGINE, GOOD_CID, pid=424242)
+            self.assertIn("pid=424242", u.call_args[0][0])
+
+    def test_no_pid_by_default(self):
+        body = json.dumps({"response": {
+            "playback_url": "http://x/ace/r/AAAA",
+            "command_url": "http://x/ace/cmd/AAAA",
+        }}).encode("utf-8")
+        with mock.patch("server.engine_client.urllib.request.urlopen",
+                        return_value=_fake_resp(body)) as u:
+            engine_getstream(ENGINE, GOOD_CID)
+            self.assertNotIn("pid=", u.call_args[0][0])
 
 
 class ReleaseEngineSessionTests(unittest.TestCase):
@@ -187,6 +244,48 @@ class ReleaseEngineSessionTests(unittest.TestCase):
             u.return_value.read = lambda n: b""
             _release_engine_session("http://x/cmd?cid=AAA")
             self.assertIn("&method=stop", u.call_args[0][0])
+
+
+class EnginePollStatTests(unittest.TestCase):
+    """stat_url polling is enrichment: it returns the engine's response
+    dict on success and an empty dict for anything it can't trust, but it
+    still refuses oversize / hostile bodies via the shared hardening."""
+
+    def test_returns_response_dict(self):
+        body = json.dumps({"response": {
+            "status": "dl", "peers": 7, "speed_down": 3416, "downloaded": 1024,
+        }}).encode("utf-8")
+        with mock.patch("server.engine_client.urllib.request.urlopen",
+                        return_value=_fake_resp(body)):
+            out = engine_poll_stat(ENGINE + "/ace/stat/AAAA")
+        self.assertEqual(out["status"], "dl")
+        self.assertEqual(out["peers"], 7)
+
+    def test_none_url_is_empty(self):
+        with mock.patch("server.engine_client.urllib.request.urlopen") as u:
+            self.assertEqual(engine_poll_stat(None), {})
+            self.assertFalse(u.called)
+
+    def test_missing_response_is_empty(self):
+        body = json.dumps({"error": None}).encode("utf-8")
+        with mock.patch("server.engine_client.urllib.request.urlopen",
+                        return_value=_fake_resp(body)):
+            self.assertEqual(engine_poll_stat(ENGINE + "/ace/stat/AAAA"), {})
+
+    def test_appends_format_json(self):
+        body = json.dumps({"response": {"status": "idle"}}).encode("utf-8")
+        with mock.patch("server.engine_client.urllib.request.urlopen",
+                        return_value=_fake_resp(body)) as u:
+            engine_poll_stat(ENGINE + "/ace/stat/AAAA")
+            self.assertIn("?format=json", u.call_args[0][0])
+
+    def test_refuses_oversize_body(self):
+        from server.constants import MAX_ENGINE_BYTES
+        big = b'{"x": "' + b"A" * (MAX_ENGINE_BYTES + 50) + b'"}'
+        with mock.patch("server.engine_client.urllib.request.urlopen",
+                        return_value=_fake_resp(big)):
+            with self.assertRaises(EngineError):
+                engine_poll_stat(ENGINE + "/ace/stat/AAAA")
 
 
 if __name__ == "__main__":

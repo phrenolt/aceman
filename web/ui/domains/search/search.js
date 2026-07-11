@@ -18,7 +18,7 @@ import { paginate } from '../../lib/pagination.js';
 import { shouldSearch, normaliseQuery, buildSearchUrl } from './lib/search_query.js';
 import { findFavouriteByCid } from '../favourites/index.js';
 import { allFavs, instaSave, updateSaveButton } from '../favourites/index.js';
-import { play, refreshClearButton } from '../playback/index.js';
+import { play, refreshClearButton, notifyIfAlreadyPlaying } from '../playback/index.js';
 import { buildSavedBadge } from '../library/index.js';
 import { setIcon } from '../../shared/icons.js';
 import { pageSize } from '../../lib/library_settings.js';
@@ -75,6 +75,15 @@ export function refreshSearchResultsIfAny() {
   if (allSearchResults.length) renderSearchResults();
 }
 
+// {cid, name} for the whole current result set (not just the visible page) —
+// the probing domain's "Probe all search results" walks this. Bounded by what
+// the current query returned; it does not re-run the search.
+export function searchResultItems() {
+  return allSearchResults.map(r => ({
+    cid: r.cid, name: (r.name || r.translated_name || '').trim(),
+  }));
+}
+
 // Init-facing pager handlers — keep searchPage private to this module.
 export function searchPagePrev() { searchPage--; renderSearchResults(); }
 export function searchPageNext() { searchPage++; renderSearchResults(); }
@@ -98,6 +107,7 @@ export function renderSearchResults() {
 export function renderSearchRow(r) {
   const row = document.createElement('div');
   row.className = 'fav';
+  row.dataset.cid = r.cid;   // lets the probing domain health-check this row
 
   const wrap = document.createElement('div');
   wrap.className = 'fav-name-wrap';
@@ -122,6 +132,7 @@ export function renderSearchRow(r) {
   wrap.appendChild(sub);
 
   wrap.onclick = async () => {
+    if (notifyIfAlreadyPlaying(r.cid)) return;   // re-click on the live row: no-op
     $('cid-input').value = r.cid;
     refreshClearButton();
     showBusy('Starting…');

@@ -32,6 +32,10 @@ class Config:
         # Buffer slider (seconds). Drives the in-tab pre-roll AND, via the
         # aceman CLI, the external player's network cache (VLC/mpv).
         "buffer_secs": int,
+        # Watch history (Library settings). When recording is off, plays are
+        # not written; the cap trims the oldest rows once exceeded.
+        "history_recording": bool,
+        "history_max_rows": int,
     }
 
     def __init__(self, path: pathlib.Path):
@@ -45,6 +49,8 @@ class Config:
             "default_browser": "",
             "default_browser_source": "",
             "buffer_secs": 10,
+            "history_recording": True,
+            "history_max_rows": 500,
         }
         if path.is_file():
             try:
