@@ -108,6 +108,8 @@ from server.search import SearchError, _NoRedirectHandler, SearchProxy
 from server.config_store import Config
 from server.favourites import DuplicateCidError, FavStore
 from server.history import HistoryStore
+from server.probe_status_store import ProbeStatusStore
+from server.unplayable_store import UnplayableStore
 from server.desktop_helpers import _desktop_quote_arg
 from server.context import RouteContext
 from server.http_io import Request, Response
@@ -433,6 +435,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
     engine: str = DEFAULT_ENGINE
     store: FavStore | None = None  # set at startup; always sqlite-backed
     history_store: HistoryStore | None = None
+    unplayable_store: UnplayableStore | None = None
+    probe_status_store: ProbeStatusStore | None = None
     engine_mgr: "EngineBrokerClient | None" = None
     config: "Config | None" = None
     search_proxy: "SearchProxy | None" = None
@@ -1380,7 +1384,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
             _release_engine_session(prior_cmd)
 
         try:
-            playback_url, command_url = engine_getstream(self.engine, cid)
+            # stat_url is only used by the health-probe path; playback
+            # tracks readiness from ffmpeg's first byte, so ignore it here.
+            playback_url, command_url, _stat_url = engine_getstream(self.engine, cid)
         except EngineError as e:
             _log("proxy", "getstream failed for %s: %s", cid, e)
             return self._error(502, _sanitize_msg(str(e)))
@@ -2180,6 +2186,8 @@ def main(argv: list[str] | None = None) -> int:
     Handler.allowed_hosts = _build_allowed_hosts(args.host, args.port)
     Handler.store = FavStore(pathlib.Path(args.db))
     Handler.history_store = HistoryStore(pathlib.Path(args.db))
+    Handler.unplayable_store = UnplayableStore(pathlib.Path(args.db))
+    Handler.probe_status_store = ProbeStatusStore(pathlib.Path(args.db))
     mode_msg = f"sqlite at {args.db}"
 
     Handler.config = Config(pathlib.Path(args.config))
@@ -2223,6 +2231,8 @@ def main(argv: list[str] | None = None) -> int:
         engine=Handler.engine,
         store=Handler.store,
         history_store=Handler.history_store,
+        unplayable_store=Handler.unplayable_store,
+        probe_status_store=Handler.probe_status_store,
         config=Handler.config,
         config_path=Handler.config_path,
         config_dir=Handler.config_dir,

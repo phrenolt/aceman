@@ -18,4 +18,14 @@ export const KEYS = Object.freeze({
   PAGE_SIZE: 'aceman.pageSize',                   // rows per page (search/favs/history)
   REMOVE_FROM_HISTORY_ON_SAVE: 'aceman.removeFromHistoryOnSave',
   MSE_CAP_BYTES: 'aceman.mseCapBytes',            // learned SourceBuffer byte ceiling
+  DEEP_PROBE: 'aceman.deepProbe',                 // probe checks playability (ffprobe) + logs failures
+  PROBE_AGENTS: 'aceman.probeAgents',             // concurrent probe agents (pool size)
+  PROBE_FRESHNESS_MINS: 'aceman.probeFreshnessMins', // skip re-probe if verdict this fresh (canonical minutes)
+  PROBE_FRESHNESS_UNIT: 'aceman.probeFreshnessUnit', // display unit for the above: 'min' | 'hours'
+  PROBE_SCOPE: 'aceman.probeScope',               // selected scope in the ⚕ panel
+  PROBE_KEEP_UPDATED: 'aceman.probeKeepUpdated',  // auto re-probe the selected scope as it changes
+  FAV_SORT: 'aceman.favSort',                     // favourites order: 'name' | 'recent'
+  LIBRARY_DEFAULT_TAB: 'aceman.libraryDefaultTab', // tab to open the Library on: 'last'|search|favourites|history
+  RELATIVE_TIMES: 'aceman.relativeTimes',         // show "3d ago" vs an absolute stamp
+  SKIP_DELETE_CONFIRM: 'aceman.skipDeleteConfirm', // skip the "are you sure?" on deletes
 });

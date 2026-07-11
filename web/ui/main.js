@@ -21,7 +21,8 @@ import { refreshDesktopEntry, toggleDesktopEntry } from './domains/desktop/index
 import { onSearchInput, runSearch, searchPagePrev, searchPageNext } from './domains/search/index.js';
 import { allFavs, loadFavs,
          updateSaveButton, saveFav, setFavSearch, favPagePrev, favPageNext } from './domains/favourites/index.js';
-import { initLibrary, openLibrarySettings, closeLibrarySettings, saveLibrarySettings } from './domains/library/index.js';
+import { initLibrary, openLibrarySettings, closeLibrarySettings } from './domains/library/index.js';
+import { initProbing } from './domains/probing/index.js';
 import { setHistorySearch, histPagePrev, histPageNext, clearAllHistory } from './domains/history/index.js';
 import { parseId, loadPlayers, loadBrowsers, detectCurrentBrowser, detectedPlayers,
          detectedBrowsers, _currentBrowserName, loadLastPlay, extractPlayCidFromUrl,
@@ -236,10 +237,14 @@ import { parseId, loadPlayers, loadBrowsers, detectCurrentBrowser, detectedPlaye
   // Library card: restore the last-open tab (Search / History / Favourites)
   // and wire the icon toggles.
   initLibrary();
-  // ⚙ Library settings modal.
+  // ⚕ Probe-page health checks (wires its own button + row-marker observer).
+  initProbing();
+  // ⚙ Library settings modal (immediate-apply; close via ✕ / Escape / backdrop).
   $('library-cog').onclick = openLibrarySettings;
-  $('library-settings-cancel').onclick = closeLibrarySettings;
-  $('library-settings-save').onclick = saveLibrarySettings;
+  $('library-settings-close').onclick = closeLibrarySettings;
+  $('library-settings-modal').onclick = e => {
+    if (e.target === $('library-settings-modal')) closeLibrarySettings();
+  };
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape' && $('library-settings-modal').style.display === 'flex') closeLibrarySettings();
   });

@@ -2,4 +2,4 @@
 // bootstrap) import from here, never from the files behind it —
 // this is the boundary. Internals stay private to the folder.
 
-export { markSearchRowSaved, onSearchInput, refreshSearchResultsIfAny, runSearch, searchPageNext, searchPagePrev } from './search.js';
+export { markSearchRowSaved, onSearchInput, refreshSearchResultsIfAny, runSearch, searchResultItems, searchPageNext, searchPagePrev } from './search.js';

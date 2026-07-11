@@ -50,6 +50,25 @@ class HistoryStoreTests(unittest.TestCase):
         rows = self.store.list()
         self.assertEqual(rows[0]["cid"], CID_A.lower())
 
+    # ----------------------------------------------------------------- cap/trim
+
+    def test_record_trims_to_cap(self):
+        # cap=50 (the minimum) keeps only the 50 most-recent rows. Insert 55
+        # distinct channels; the count after trimming is deterministic even
+        # when the same-second timestamps tie.
+        for i in range(55):
+            self.store.record(f"{i:040x}", f"Ch {i}", cap=50)
+        self.assertEqual(len(self.store.list()), 50)
+
+    def test_record_cap_floored_against_nonsense(self):
+        # A cap of 0 must NOT wipe the table to nothing (floored to _MIN_ROWS).
+        self.store.record(CID_A, "A", cap=0)
+        self.assertEqual(len(self.store.list()), 1)
+
+    def test_record_bad_cap_falls_back_to_default(self):
+        self.store.record(CID_A, "A", cap="not-an-int")
+        self.assertEqual(len(self.store.list()), 1)
+
     # -------------------------------------------------------------------- list
 
     def test_list_ordered_most_recent_first(self):

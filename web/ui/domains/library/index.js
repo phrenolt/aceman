@@ -3,4 +3,4 @@
 // this is the boundary. Internals stay private to the folder.
 
 export { initLibrary, showTab, openFavourite, buildSavedBadge,
-         openLibrarySettings, closeLibrarySettings, saveLibrarySettings } from './library.js';
+         openLibrarySettings, closeLibrarySettings, resetLibrarySettings } from './library.js';

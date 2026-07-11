@@ -394,6 +394,7 @@
 
 /*@include domains/favourites/favourites.css*/
 /*@include domains/library/library.css*/
+/*@include domains/probing/probing.css*/
 
   /* Setup & tools card: structured rows + danger zone */
   .setup-row { padding: .6rem 0; border-top: 1px solid #333; }
@@ -457,6 +458,11 @@
   .modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.65);
                     display: flex; align-items: center; justify-content: center;
                     z-index: 100; padding: 1rem; }
+  /* System dialogs (confirm / busy) are raised by a confirm or a wait that a
+     content panel modal (Probe, Library settings, …) triggered, so they must
+     always sit ABOVE that panel — otherwise, being earlier in the DOM at the
+     same z-index, they'd render behind it. */
+  #confirm-modal, #busy-modal { z-index: 200; }
   .modal-card { background: #181818; border: 1px solid #444; border-radius: 8px;
                 padding: 1.25rem 1.5rem; max-width: 540px; width: 100%;
                 box-shadow: 0 8px 24px rgba(0,0,0,.5); }

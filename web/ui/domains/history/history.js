@@ -10,16 +10,17 @@
 // Cross-module deps are forward imports: allFavs + instaSave +
 // findFavouriteByCid (favourites), play + refreshClearButton (playback).
 
-import { $, showBusy, hideBusy } from '../../shared/dom.js';
+import { $, showBusy, hideBusy, showConfirm } from '../../shared/dom.js';
 import { api } from '../../shared/api.js';
 import { paginate } from '../../lib/pagination.js';
 import { formatSqliteUtcToLocal } from './lib/sqlite_time.js';
+import { daysSinceLabel } from '../favourites/lib/last_watched_label.js';
 import { setIcon } from '../../shared/icons.js';
 import { findFavouriteByCid } from '../favourites/index.js';
 import { allFavs, instaSave } from '../favourites/index.js';
-import { play, refreshClearButton } from '../playback/index.js';
+import { play, refreshClearButton, notifyIfAlreadyPlaying } from '../playback/index.js';
 import { buildSavedBadge } from '../library/index.js';
-import { pageSize } from '../../lib/library_settings.js';
+import { pageSize, relativeTimes, skipDeleteConfirm } from '../../lib/library_settings.js';
 
 // Convert a SQLite 'YYYY-MM-DD HH:MM:SS' UTC stamp to a local
 // 'YYYY-MM-DD HH:MM' string using the browser's OS timezone.
@@ -33,6 +34,13 @@ let histPage = 0;
 
 // Fetch the full history and render it into the panel. Called when the
 // History tab is activated (see the library domain).
+// {cid, name} for every history entry (not just the visible page) — the
+// probing domain's "Probe all history" walks this so off-page channels get a
+// persisted verdict too.
+export function historyItems() {
+  return allHistory.map(h => ({ cid: h.cid, name: h.name }));
+}
+
 export async function loadHistory() {
   if (!$('history-list')) return;
   try { allHistory = await api('/api/history'); } catch { allHistory = []; }
@@ -49,7 +57,7 @@ function filteredHistory() {
 function renderHistory() {
   const list = $('history-list');
   if (!list) return;
-  const filtered = filteredHistory();
+  const filtered = filteredHistory();          // server already returns newest-first
   const p = paginate(filtered.length, histPage, pageSize());
   histPage = p.page;
 
@@ -74,7 +82,20 @@ export function setHistorySearch(value) { histSearch = value; histPage = 0; rend
 export function histPagePrev() { histPage--; renderHistory(); }
 export function histPageNext() { histPage++; renderHistory(); }
 
+// Confirm a history deletion unless "Skip delete confirmations" is on (the same
+// Library setting that gates the favourites delete confirm).
+async function confirmHistoryDelete({ title, message, confirmText }) {
+  if (skipDeleteConfirm()) return true;
+  return showConfirm({ title, message, confirmText, danger: true });
+}
+
 export async function clearAllHistory() {
+  if (!(await confirmHistoryDelete({
+    title: 'Clear watch history',
+    message: 'Remove every entry from your watch history? This does not touch '
+           + 'your favourites.',
+    confirmText: 'Clear all',
+  }))) return;
   await api('/api/history', { method: 'DELETE' }).catch(() => {});
   allHistory = [];
   histPage = 0;
@@ -84,6 +105,7 @@ export async function clearAllHistory() {
 function renderHistoryRow(h) {
   const row = document.createElement('div');
   row.className = 'fav';
+  row.dataset.cid = h.cid;   // lets the probing domain health-check this row
 
   const wrap = document.createElement('div');
   wrap.className = 'fav-name-wrap';
@@ -95,11 +117,14 @@ function renderHistoryRow(h) {
 
   const sub = document.createElement('span');
   sub.className = 'fav-last';
-  sub.textContent = sqliteUtcToLocal(h.played_at);
+  sub.textContent = relativeTimes()
+    ? daysSinceLabel(h.played_at)
+    : sqliteUtcToLocal(h.played_at);
 
   wrap.appendChild(name);
   wrap.appendChild(sub);
   wrap.onclick = async () => {
+    if (notifyIfAlreadyPlaying(h.cid)) return;   // re-click on the live row: no-op
     $('cid-input').value = h.cid;
     refreshClearButton();
     showBusy('Starting…');
@@ -138,6 +163,11 @@ function renderHistoryRow(h) {
   delBtn.title = 'Remove from history';
   delBtn.setAttribute('aria-label', 'Remove from history');
   delBtn.onclick = async () => {
+    if (!(await confirmHistoryDelete({
+      title: 'Remove from history',
+      message: `Remove “${h.name}” from your watch history?`,
+      confirmText: 'Remove',
+    }))) return;
     await api('/api/history/' + encodeURIComponent(h.cid), { method: 'DELETE' })
       .catch(() => {});
     allHistory = allHistory.filter(x => x.cid !== h.cid);

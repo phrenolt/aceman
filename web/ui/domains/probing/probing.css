@@ -1,0 +1,103 @@
+  /* ⚕ Probe-page button — mirrors the ⚙ cog but on the left of the tabs row
+     (the grid's empty first column), so the Library card reads
+     probe · tabs · settings. Same round icon-button shape as .library-cog. */
+  .library-probe {
+    grid-column: 1;
+    justify-self: start;
+    align-self: center;
+    width: var(--library-control-h);
+    height: var(--library-control-h);
+    margin: 0;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg);
+    border: 1px solid #444;
+    border-radius: 50%;
+    color: var(--mut);
+  }
+  .library-probe svg { width: 1.4rem; height: 1.4rem; display: block; }
+  .library-probe:hover:not(:disabled) { color: var(--hover); border-color: var(--hover); }
+  .library-probe:disabled { opacity: .5; cursor: default; }
+
+  /* Per-row health markers — the leading status dot on a .fav row, painted by
+     the probe run. Colours reuse the app palette so they track the theme. */
+  .probe-badge {
+    flex: 0 0 auto;
+    width: 1em;
+    text-align: center;
+    font-size: .9rem;
+    line-height: 1;
+    user-select: none;
+  }
+  .probe-healthy    { color: var(--go); }
+  .probe-slow       { color: var(--acc); }
+  .probe-unplayable { color: #e8833a; }          /* orange — bytes flow, bad format */
+  .probe-dead       { color: var(--err); }
+  .probe-unreachable{ color: var(--mut); }
+  .probe-unknown    { color: var(--mut); }
+  .probe-playing    { color: var(--go); }         /* the channel you're watching */
+  .probe-checking   { color: var(--mut); animation: probe-pulse 1s ease-in-out infinite; }
+  @keyframes probe-pulse { 0%, 100% { opacity: .3; } 50% { opacity: 1; } }
+
+  /* Sub-text under a Library setting (the deep-probe explanation). */
+  .setting-sub { color: var(--mut); font-size: .75rem; margin: .25rem 0 0 1.6rem; }
+
+  /* Small borderless ✕ close button in the modal header. */
+  .icon-x {
+    background: none;
+    border: none;
+    color: var(--mut);
+    font-size: 1rem;
+    line-height: 1;
+    padding: .2rem .35rem;
+    cursor: pointer;
+  }
+  .icon-x:hover { color: var(--hover); }
+
+  /* ⚕ Probe panel — the scope switch as a horizontal segmented control.
+     The native radio is visually hidden; the label is the pill. */
+  .probe-scopes { display: flex; flex-wrap: wrap; gap: .3rem; }
+  .probe-scopes label {
+    display: inline-flex;
+    align-items: center;
+    padding: .32rem .7rem;
+    border: 1px solid #444;
+    border-radius: 999px;
+    cursor: pointer;
+    font-size: .85rem;
+    color: var(--mut);
+    user-select: none;
+    transition: color .12s, background .12s, border-color .12s;
+  }
+  .probe-scopes label:hover { color: var(--fg); border-color: #666; }
+  /* Hide the radio but keep it focusable/accessible. */
+  .probe-scopes input {
+    position: absolute;
+    width: 1px; height: 1px;
+    padding: 0; margin: -1px; border: 0;
+    clip: rect(0 0 0 0); clip-path: inset(50%);
+    overflow: hidden; white-space: nowrap;
+  }
+  .probe-scopes label:has(input:checked) {
+    color: var(--acc);
+    background: rgba(181, 146, 56, .14);
+    border-color: var(--hover);
+    box-shadow: 0 0 6px rgba(181, 146, 56, .45);
+  }
+  .probe-scopes label:has(input:focus-visible) {
+    outline: 2px solid var(--hover);
+    outline-offset: 2px;
+  }
+
+  /* Advanced disclosure — a quiet, collapsible group for the tuning knobs. */
+  .probe-advanced > summary {
+    cursor: pointer;
+    color: var(--mut);
+    font-size: .85rem;
+    list-style-position: inside;
+    user-select: none;
+  }
+  .probe-advanced > summary:hover { color: var(--fg); }
+  .probe-advanced[open] > summary { margin-bottom: .3rem; color: var(--fg); }

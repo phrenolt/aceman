@@ -35,7 +35,9 @@ from .config_store import Config
 from .favourites import FavStore
 from .heartbeat import HeartbeatTracker
 from .history import HistoryStore
+from .probe_status_store import ProbeStatusStore
 from .search import SearchProxy
+from .unplayable_store import UnplayableStore
 
 
 @dataclass
@@ -43,6 +45,8 @@ class RouteContext:
     engine: str = ""
     store: Optional[FavStore] = None
     history_store: Optional[HistoryStore] = None
+    unplayable_store: Optional[UnplayableStore] = None
+    probe_status_store: Optional[ProbeStatusStore] = None
     config: Optional[Config] = None
     config_path: Optional[pathlib.Path] = None
     config_dir: Optional[pathlib.Path] = None

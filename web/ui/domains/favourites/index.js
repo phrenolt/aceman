@@ -2,5 +2,5 @@
 // bootstrap) import from here, never from the files behind it —
 // this is the boundary. Internals stay private to the folder.
 
-export { allFavs, favPageNext, favPagePrev, instaSave, loadFavs, saveFav, setFavSearch, updateSaveButton } from './favourites.js';
+export { allFavs, favouriteItems, favPageNext, favPagePrev, instaSave, loadFavs, saveFav, setFavSearch, updateSaveButton } from './favourites.js';
 export { findFavouriteByCid } from './lib/favourite_lookup.js';
