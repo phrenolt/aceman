@@ -66,7 +66,12 @@ case "$GW_HOST" in
     *) echo "$PROG: ACE_GW_HOST must be an IPv4 (or ::1), got: $GW_HOST" >&2; exit 1 ;;
 esac
 
-# Replace any prior instance.
+# Replace any prior instance. `podman rm -f` clears the container record,
+# but a gateway that died uncleanly can leave an orphaned rootlessport
+# forwarder still bound to the host port — the next run then fails with
+# `rootlessport listen tcp ...:PORT: bind: address already in use`. `--replace`
+# on the run below tears the old instance (and its forwarder) down atomically
+# as part of spawning the new one, so a stale port holder can't wedge us.
 podman rm -f "$GW_NAME" >/dev/null 2>&1 || true
 
 detach_flag=()
@@ -75,7 +80,7 @@ detach_flag=()
 # Pure socket relay: no filesystem writes, no caps, tight memory/pids. It
 # listens on 0.0.0.0 INSIDE the container; the host publish (GW_HOST) is
 # what actually controls reachability (loopback by default).
-exec podman run --rm "${detach_flag[@]}" \
+exec podman run --rm --replace "${detach_flag[@]}" \
     --name "$GW_NAME" \
     --network "$ACE_NETWORK" \
     -p "${GW_HOST}:${GW_PORT}:${GW_PORT}" \

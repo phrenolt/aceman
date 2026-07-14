@@ -36,6 +36,7 @@ import { buildLanStreamUrl } from './lib/lan_url.js';
 import { decidePlaybackPath } from './lib/playback_decision.js';
 import { targetValueToConfig } from './lib/playback_config.js';
 import { clampBuffer, bufferedAhead, bufferReady, BUFFER_DEFAULT } from './lib/playback_buffer.js';
+import { feedIsDead, STALL_FEED_SILENT_MS } from './lib/playback_stall.js';
 import { effectiveSafeBytes, foldObservedCap, maxBufferSecs } from './lib/mse_budget.js';
 import { describePlayButton } from './lib/play_stop_button.js';
 import { describeMoveButton } from './lib/move_stream_button.js';
@@ -413,12 +414,15 @@ function _maxBufferSecs() {
 
 // Stall watchdog, two-stage. Short buffering hiccups are normal on live
 // streams and usually self-recover, so stage 1 (5 s) shows only a gentle,
-// non-alarming note and keeps the health ticker running. If it's STILL
-// stalled at stage 2 (20 s) the feed is genuinely dead — we surface a
-// real error and pull the server's proxy post-mortem so the user learns
-// WHY (buffer overflow / engine EOF / corrupt source). Recovery at any
-// point wipes both. (Before #21 this was a single 8 s hard error; #21
-// softened it into a note that never escalated — hiding real deaths.)
+// non-alarming note and keeps the health ticker running. Stage 2 (20 s) only
+// declares death if the proxy feed has also gone SILENT — a stall while bytes
+// still trickle in is a slow network, not a dead stream, so it stays a note
+// and re-checks (see _hardStallCheck). A genuinely dead feed surfaces a real
+// error and pulls the server's proxy post-mortem so the user learns WHY
+// (buffer overflow / engine EOF / corrupt source). Recovery at any point wipes
+// both. (Before #21 this was a single 8 s hard error; #21 softened it into a
+// note that never escalated — hiding real deaths; the byte-flow gate then
+// stopped it firing on slow-but-alive links.)
 let _stallSoftTimer = null;
 let _stallHardTimer = null;
 let _stalled = false;
@@ -446,14 +450,37 @@ function _armStall() {
     const s = $('pb-video-status');
     if (s) { s.textContent = 'Buffering — the stream paused, still trying…'; s.className = 'gate-hint'; }
   }, 5000);
-  _stallHardTimer = setTimeout(() => {
-    _stallHardTimer = null;
-    _stalled = true;
-    // Freeze the readout on the error, but keep _renderStatusFn so
-    // _clearStall can un-freeze if the stream turns out to be recoverable.
-    _stopBufferHealthTicker();
-    _reportStreamDeath('Stream stalled — proxy disconnected or stream ended');
-  }, 20000);
+  _stallHardTimer = setTimeout(_hardStallCheck, 20000);
+}
+
+// Stage-2 escalation, byte-flow aware. A buffer underrun on a very slow link
+// looks identical to a dead proxy here (playback just stops), so disambiguate
+// the same way _preRollBuffer does — by whether bytes are still arriving:
+//
+//   * feed still trickling in (bytes above the flow floor within the silence
+//     window) → slow network, NOT a dead stream. Keep the soft "still
+//     receiving" note and re-check later; given time it recovers. Crying
+//     "proxy disconnected" here was the false alarm slow-network users hit.
+//   * feed gone silent for STALL_FEED_SILENT_MS (or never delivered a byte) →
+//     genuinely dead. Freeze the readout and surface the real error + the
+//     server's post-mortem.
+function _hardStallCheck() {
+  _stallHardTimer = null;
+  const now = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+  if (!feedIsDead(now, _lastByteFlowAt)) {
+    _stalled = true;   // renderStatus no-ops so the note owns the line
+    const s = $('pb-video-status');
+    if (s) { s.textContent = 'Buffering — slow network, still receiving…'; s.className = 'gate-hint'; }
+    // Re-arm; a later true silence escalates, recovery ('playing'/'canplay' →
+    // _clearStall) cancels this timer. _clearStall already clears _stallHardTimer.
+    _stallHardTimer = setTimeout(_hardStallCheck, STALL_FEED_SILENT_MS);
+    return;
+  }
+  _stalled = true;
+  // Freeze the readout on the error, but keep _renderStatusFn so
+  // _clearStall can un-freeze if the stream turns out to be recoverable.
+  _stopBufferHealthTicker();
+  _reportStreamDeath('Stream stalled — proxy disconnected or stream ended');
 }
 
 // A dismissible top-header notice for the pre-roll buffer overflowing:
