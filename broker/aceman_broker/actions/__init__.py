@@ -16,7 +16,7 @@ def build_registry() -> "dict[str, callable]":
     """Lazy-build the ACTIONS dict so each submodule can be imported
     independently for tests (avoids circular import chains)."""
     from . import (engine, gpu, image, players, browsers, desktop,
-                   web_lifecycle, metrics)
+                   web_lifecycle, metrics, tv)
 
     actions: "dict[str, callable]" = {}
     engine.register(actions)
@@ -27,6 +27,7 @@ def build_registry() -> "dict[str, callable]":
     desktop.register(actions)
     web_lifecycle.register(actions)
     metrics.register(actions)
+    tv.register(actions)
     return actions
 
 

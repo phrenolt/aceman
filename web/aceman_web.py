@@ -102,12 +102,14 @@ from server.broker_client import (
     ImageBrokerClient,
     PlayersBrokerClient,
     SysBrokerClient,
+    TvBrokerClient,
     WebBrokerClient,
 )
 from server.search import SearchError, _NoRedirectHandler, SearchProxy
 from server.config_store import Config
 from server.favourites import DuplicateCidError, FavStore
 from server.history import HistoryStore
+from server.tv_ip_store import TvIpStore
 from server.probe_status_store import ProbeStatusStore
 from server.unplayable_store import UnplayableStore
 from server.desktop_helpers import _desktop_quote_arg
@@ -435,6 +437,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
     engine: str = DEFAULT_ENGINE
     store: FavStore | None = None  # set at startup; always sqlite-backed
     history_store: HistoryStore | None = None
+    tv_ip_store: TvIpStore | None = None
     unplayable_store: UnplayableStore | None = None
     probe_status_store: ProbeStatusStore | None = None
     engine_mgr: "EngineBrokerClient | None" = None
@@ -446,6 +449,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
     image_mgr: "ImageBrokerClient | None" = None
     players_client: "PlayersBrokerClient | None" = None
     browsers_client: "BrowsersBrokerClient | None" = None
+    tv_client: "TvBrokerClient | None" = None
     web_client: "WebBrokerClient | None" = None
     sys_client: "SysBrokerClient | None" = None
     config_dir: "pathlib.Path | None" = None
@@ -1955,6 +1959,44 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 return self._error(500, f"could not open browser: {e}")
             return self._send_json(200, {"opened": True, "url": target_url})
 
+        if path == "/api/tv/connect":
+            # Connect to an Android TV box over network ADB and report
+            # readiness so the UI can guide the one-time on-TV debugging
+            # approval. Body: {ip}. The broker validates the IP; we only
+            # gate on the broker being present.
+            if not self.tv_client:
+                return self._error(503, "broker disabled — adb casting unavailable")
+            ip = (body.get("ip") or "").strip()
+            try:
+                result = self.tv_client.connect(ip)
+            except EngineError as e:
+                return self._error(502, _sanitize_msg(str(e)))
+            # Remember a box we successfully reached, so the combobox fills
+            # server-side (shared across browsers). Only on authorized —
+            # an unreachable/typo'd IP shouldn't be saved.
+            if (self.tv_ip_store and isinstance(result, dict)
+                    and result.get("status") == "authorized"):
+                self.tv_ip_store.record(ip)
+            return self._send_json(200, result)
+
+        if path == "/api/tv/cast":
+            # Launch VLC on the Android TV box playing the cid. Body:
+            # {ip, cid}. The broker builds the getstream URL from its own
+            # LAN detection (never a client URL) and fires the intent.
+            if not self.tv_client:
+                return self._error(503, "broker disabled — adb casting unavailable")
+            ip = (body.get("ip") or "").strip()
+            cid = (body.get("cid") or "").lower().strip()
+            try:
+                result = self.tv_client.cast(ip, cid)
+            except EngineError as e:
+                return self._error(502, _sanitize_msg(str(e)))
+            # A launched cast means the box is reachable + approved — record it.
+            if (self.tv_ip_store and isinstance(result, dict)
+                    and result.get("cast")):
+                self.tv_ip_store.record(ip)
+            return self._send_json(200, result)
+
         if path == "/api/player/stop":
             # Two cleanups, in order:
             #   1. Kill our own in-page proxy (ffmpeg). Without this, the
@@ -2186,6 +2228,7 @@ def main(argv: list[str] | None = None) -> int:
     Handler.allowed_hosts = _build_allowed_hosts(args.host, args.port)
     Handler.store = FavStore(pathlib.Path(args.db))
     Handler.history_store = HistoryStore(pathlib.Path(args.db))
+    Handler.tv_ip_store = TvIpStore(pathlib.Path(args.db))
     Handler.unplayable_store = UnplayableStore(pathlib.Path(args.db))
     Handler.probe_status_store = ProbeStatusStore(pathlib.Path(args.db))
     mode_msg = f"sqlite at {args.db}"
@@ -2218,6 +2261,7 @@ def main(argv: list[str] | None = None) -> int:
     Handler.image_mgr = ImageBrokerClient(broker)
     Handler.players_client = PlayersBrokerClient(broker)
     Handler.browsers_client = BrowsersBrokerClient(broker)
+    Handler.tv_client = TvBrokerClient(broker)
     Handler.web_client = WebBrokerClient(broker)
     Handler.sys_client = SysBrokerClient(broker)
     Handler.db_path = pathlib.Path(args.db)
@@ -2231,6 +2275,7 @@ def main(argv: list[str] | None = None) -> int:
         engine=Handler.engine,
         store=Handler.store,
         history_store=Handler.history_store,
+        tv_ip_store=Handler.tv_ip_store,
         unplayable_store=Handler.unplayable_store,
         probe_status_store=Handler.probe_status_store,
         config=Handler.config,

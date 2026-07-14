@@ -36,6 +36,7 @@ from .favourites import FavStore
 from .heartbeat import HeartbeatTracker
 from .history import HistoryStore
 from .probe_status_store import ProbeStatusStore
+from .tv_ip_store import TvIpStore
 from .search import SearchProxy
 from .unplayable_store import UnplayableStore
 
@@ -45,6 +46,7 @@ class RouteContext:
     engine: str = ""
     store: Optional[FavStore] = None
     history_store: Optional[HistoryStore] = None
+    tv_ip_store: Optional[TvIpStore] = None
     unplayable_store: Optional[UnplayableStore] = None
     probe_status_store: Optional[ProbeStatusStore] = None
     config: Optional[Config] = None

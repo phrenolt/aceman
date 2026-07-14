@@ -28,6 +28,7 @@ def register_all(router: Router) -> None:
         storage_mode,
         stream_probe,
         sys as sys_routes,
+        tv_ip_routes,
         web_routes,
     )
     browsers.register(router)
@@ -44,6 +45,7 @@ def register_all(router: Router) -> None:
     storage_mode.register(router)
     stream_probe.register(router)
     sys_routes.register(router)
+    tv_ip_routes.register(router)
     web_routes.register(router)
     # NOTE: /api/player/stop, /api/open-in-browser, /api/stream/proxy,
     # /api/engine/image (POST/DELETE), /api/restart, /api/shutdown,

@@ -30,7 +30,7 @@ import { parseId, loadPlayers, loadBrowsers, detectCurrentBrowser, detectedPlaye
          renderPlaybackTargets, restartStream, refreshEngineStatus, engineState,
          clearNowPlaying, clearCidInput, refreshClearButton, setTabTitle, setNowPlayingName,
          waitForEngineReady, waitForBackend, refreshPlayerRowAlignment,
-         movePlaybackToSelection, toggleEngine, toggleLanExpose, onPlaybackTargetChange, refreshDeviceStream, onPlaybackTitleClick, onPlaybackTitleDblClick, toggleDeviceLink, saveAutostart,
+         movePlaybackToSelection, toggleEngine, toggleLanExpose, onPlaybackTargetChange, refreshDeviceStream, connectAndroidTv, onTvIpInput, onTvIpListClick, toggleTvIpDropdown, onPlaybackTitleClick, onPlaybackTitleDblClick, toggleDeviceLink, saveAutostart,
          setCfg, setCurrent } from './domains/playback/index.js';
 
 // ---- init --------------------------------------------------------------
@@ -194,6 +194,27 @@ import { parseId, loadPlayers, loadBrowsers, detectCurrentBrowser, detectedPlaye
   $('lan-expose').onchange = toggleLanExpose;
   $('device-stream-qr').onclick = toggleDeviceLink;
   $('playback-target').onchange = onPlaybackTargetChange;
+  // Android TV (VLC) panel: Connect button + Enter in the IP field both
+  // (re)connect and drive the one-time on-TV debugging approval.
+  const tvConnect = $('androidtv-connect');
+  if (tvConnect) tvConnect.onclick = () => connectAndroidTv();
+  const tvIp = $('androidtv-ip');
+  if (tvIp) {
+    // Live search over the remembered IPs as you type; Enter connects.
+    tvIp.addEventListener('input', onTvIpInput);
+    tvIp.addEventListener('focus', onTvIpInput);
+    tvIp.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); connectAndroidTv(); }
+      else if (e.key === 'Escape') {
+        const l = $('androidtv-ip-list');
+        if (l && !l.hidden) toggleTvIpDropdown();   // close only when open
+      }
+    });
+  }
+  const tvToggle = $('androidtv-ip-toggle');
+  if (tvToggle) tvToggle.onclick = toggleTvIpDropdown;
+  const tvList = $('androidtv-ip-list');
+  if (tvList) tvList.onclick = onTvIpListClick;
   $('playback-move').onclick = () => movePlaybackToSelection();
   // "Show all browser installs" — UI-only preference in localStorage.
   const showAllCb = $('show-all-browsers');
