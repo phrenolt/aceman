@@ -1924,6 +1924,29 @@ async function castToAndroidTv(cid) {
   }
 }
 
+// Force-stop VLC on the box — a clean exit that releases our stream. Exported
+// for the panel's Stop button. Returns true once VLC has been torn down.
+export async function stopAndroidTv() {
+  const ip = _androidTvIp();
+  closeTvIpDropdown();
+  if (!ip) { _applyTvStatus('invalid-ip'); return false; }
+  _setAndroidTvStatus('Stopping VLC on ' + ip + '…');
+  try {
+    const r = await api('/api/tv/stop', {
+      method: 'POST', body: JSON.stringify({ ip }),
+    });
+    if (r && r.stopped) {
+      _setAndroidTvStatus('Stopped VLC on the TV ✓');
+      return true;
+    }
+    _applyTvStatus(r && r.status);
+    return false;
+  } catch (e) {
+    _setAndroidTvStatus('Stop failed: ' + e.message, 'warn');
+    return false;
+  }
+}
+
 // "Play in" dropdown change. "Another device" is special: it isn't a
 // saved player — it exposes the engine on the LAN (after a warning) and
 // shows a QR/URL for a player on another device. Every other value is a

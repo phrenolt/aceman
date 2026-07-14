@@ -36,3 +36,7 @@ class TvBrokerClient:
     def cast(self, ip: str, cid: str) -> dict:
         return self.broker.call(
             "tv.cast", params={"ip": ip, "cid": cid}, timeout=self._TIMEOUT)
+
+    def stop(self, ip: str) -> dict:
+        return self.broker.call(
+            "tv.stop", params={"ip": ip}, timeout=self._TIMEOUT)

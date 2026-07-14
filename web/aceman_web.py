@@ -1997,6 +1997,19 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 self.tv_ip_store.record(ip)
             return self._send_json(200, result)
 
+        if path == "/api/tv/stop":
+            # Force-stop VLC on the Android TV box for a clean exit. Body:
+            # {ip}. No IP is recorded here — stopping a box we can't reach
+            # (or a typo) shouldn't populate the combobox.
+            if not self.tv_client:
+                return self._error(503, "broker disabled — adb casting unavailable")
+            ip = (body.get("ip") or "").strip()
+            try:
+                result = self.tv_client.stop(ip)
+            except EngineError as e:
+                return self._error(502, _sanitize_msg(str(e)))
+            return self._send_json(200, result)
+
         if path == "/api/player/stop":
             # Two cleanups, in order:
             #   1. Kill our own in-page proxy (ffmpeg). Without this, the

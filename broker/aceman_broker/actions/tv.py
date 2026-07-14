@@ -37,6 +37,8 @@ ADB_PORT = 5555
 # VLC Android's activity that handles http/https VIEW intents and lands
 # directly in playback. Verified against org.videolan.vlc on Android 11.
 VLC_COMPONENT = "org.videolan.vlc/.StartActivity"
+# The package half of the component — what `am force-stop` needs to close VLC.
+VLC_PACKAGE = VLC_COMPONENT.split("/", 1)[0]
 
 # Strict IPv4 — the TV is a LAN device the user typed in. Nothing but a
 # dotted-quad ever reaches an adb argv.
@@ -152,6 +154,37 @@ def action_tv_cast(params: "dict | None" = None) -> dict:
     return {"cast": True, "status": "casting", "ip": ip, "url": url}
 
 
+def action_tv_stop(params: "dict | None" = None) -> dict:
+    """Force-stop VLC on the box for a clean exit. Never raises.
+    On success ``{"stopped": True, "status": "stopped"}``; otherwise
+    ``{"stopped": False, "status": ...}`` with the same statuses as tv.cast."""
+    p = params or {}
+    ip = str(p.get("ip", "")).strip()
+    if not _valid_ip(ip):
+        return {"stopped": False, "status": "invalid-ip"}
+    if shutil.which("adb") is None:
+        return {"stopped": False, "status": "no-adb"}
+    status = _classify(_connect(ip))
+    if status != "authorized":
+        return {"stopped": False, "status": status}
+    # `am force-stop <pkg>` fully tears VLC down (kills the process + its
+    # media session), the cleanest exit — nothing left buffering our stream.
+    # The package is a fixed constant, so the argv carries no dynamic string.
+    try:
+        rc, out = _adb("-s", f"{ip}:{ADB_PORT}", "shell",
+                       f"am force-stop {VLC_PACKAGE}", timeout=15)
+    except (OSError, subprocess.SubprocessError) as e:
+        return {"stopped": False, "status": "adb-error", "reason": str(e)}
+    # force-stop is silent on success (rc 0, no output); failures carry text.
+    if rc != 0 or "Error" in out or "Exception" in out:
+        _log("tv", "tv.stop force-stop failed: %s", out.strip()[:200])
+        return {"stopped": False, "status": "stop-failed",
+                "reason": out.strip()[:200]}
+    _log("tv", "tv.stop: force-stopped VLC on %s", ip)
+    return {"stopped": True, "status": "stopped", "ip": ip}
+
+
 def register(actions: dict) -> None:
     _register(actions, "tv.connect", action_tv_connect)
     _register(actions, "tv.cast", action_tv_cast)
+    _register(actions, "tv.stop", action_tv_stop)
