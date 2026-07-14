@@ -163,7 +163,7 @@ class RegistryShapeTests(unittest.TestCase):
             "image.status", "image.install", "image.remove",
             "players.list", "player.stop",
             "browsers.list", "browser.spawn",
-            "tv.connect", "tv.cast",
+            "tv.connect", "tv.cast", "tv.stop",
             "desktop.status", "desktop.install", "desktop.uninstall",
             "desktop.restore_mimeapps_backup",
             "broker.version", "broker.shutdown", "broker.respawn",

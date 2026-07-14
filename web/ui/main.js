@@ -30,7 +30,7 @@ import { parseId, loadPlayers, loadBrowsers, detectCurrentBrowser, detectedPlaye
          renderPlaybackTargets, restartStream, refreshEngineStatus, engineState,
          clearNowPlaying, clearCidInput, refreshClearButton, setTabTitle, setNowPlayingName,
          waitForEngineReady, waitForBackend, refreshPlayerRowAlignment,
-         movePlaybackToSelection, toggleEngine, toggleLanExpose, onPlaybackTargetChange, refreshDeviceStream, connectAndroidTv, onTvIpInput, onTvIpListClick, toggleTvIpDropdown, onPlaybackTitleClick, onPlaybackTitleDblClick, toggleDeviceLink, saveAutostart,
+         movePlaybackToSelection, toggleEngine, toggleLanExpose, onPlaybackTargetChange, refreshDeviceStream, connectAndroidTv, stopAndroidTv, onTvIpInput, onTvIpListClick, toggleTvIpDropdown, onPlaybackTitleClick, onPlaybackTitleDblClick, toggleDeviceLink, saveAutostart,
          setCfg, setCurrent } from './domains/playback/index.js';
 
 // ---- init --------------------------------------------------------------
@@ -198,6 +198,8 @@ import { parseId, loadPlayers, loadBrowsers, detectCurrentBrowser, detectedPlaye
   // (re)connect and drive the one-time on-TV debugging approval.
   const tvConnect = $('androidtv-connect');
   if (tvConnect) tvConnect.onclick = () => connectAndroidTv();
+  const tvStop = $('androidtv-stop');
+  if (tvStop) tvStop.onclick = () => stopAndroidTv();
   const tvIp = $('androidtv-ip');
   if (tvIp) {
     // Live search over the remembered IPs as you type; Enter connects.

@@ -122,5 +122,46 @@ class TestTvCast(unittest.TestCase):
         self.assertEqual(res["status"], "no-lan-ip")
 
 
+class TestTvStop(unittest.TestCase):
+    def test_stop_invalid_ip(self):
+        res = tv.action_tv_stop({"ip": "nope"})
+        self.assertFalse(res["stopped"])
+        self.assertEqual(res["status"], "invalid-ip")
+
+    @patch("aceman_broker.actions.tv.shutil.which", return_value=None)
+    def test_stop_no_adb(self, _which):
+        res = tv.action_tv_stop({"ip": "192.168.1.5"})
+        self.assertFalse(res["stopped"])
+        self.assertEqual(res["status"], "no-adb")
+
+    @patch("aceman_broker.actions.tv._connect", return_value="unauthorized")
+    @patch("aceman_broker.actions.tv.shutil.which", return_value="/usr/bin/adb")
+    def test_stop_not_authorized(self, _which, _conn):
+        res = tv.action_tv_stop({"ip": "192.168.1.5"})
+        self.assertFalse(res["stopped"])
+        self.assertEqual(res["status"], "unauthorized")
+
+    @patch("aceman_broker.actions.tv._adb", return_value=(0, ""))
+    @patch("aceman_broker.actions.tv._connect", return_value="device")
+    @patch("aceman_broker.actions.tv.shutil.which", return_value="/usr/bin/adb")
+    def test_stop_success(self, _which, _conn, mock_adb):
+        res = tv.action_tv_stop({"ip": "192.168.1.5"})
+        self.assertTrue(res["stopped"])
+        self.assertEqual(res["status"], "stopped")
+        self.assertEqual(res["ip"], "192.168.1.5")
+        # Force-stops the VLC package (fixed constant, no dynamic string).
+        joined = " ".join(str(a) for a in mock_adb.call_args[0])
+        self.assertIn("force-stop org.videolan.vlc", joined)
+
+    @patch("aceman_broker.actions.tv._adb",
+           return_value=(0, "Error: package not found"))
+    @patch("aceman_broker.actions.tv._connect", return_value="device")
+    @patch("aceman_broker.actions.tv.shutil.which", return_value="/usr/bin/adb")
+    def test_stop_failed(self, _which, _conn, _adb):
+        res = tv.action_tv_stop({"ip": "192.168.1.5"})
+        self.assertFalse(res["stopped"])
+        self.assertEqual(res["status"], "stop-failed")
+
+
 if __name__ == "__main__":
     unittest.main()
