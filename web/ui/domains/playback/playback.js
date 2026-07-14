@@ -33,6 +33,7 @@ import { inBrowserPlaybackSupported } from './lib/playback_feature_detect.js';
 import { isFatalMpegtsError, isFatalVideoError } from './lib/playback_error.js';
 import { buildPlaybackOptions } from './lib/playback_options.js';
 import { buildLanStreamUrl } from './lib/lan_url.js';
+import { filterIps, removeIp } from './lib/tv_ip_history.js';
 import { decidePlaybackPath } from './lib/playback_decision.js';
 import { targetValueToConfig } from './lib/playback_config.js';
 import { clampBuffer, bufferedAhead, bufferReady, BUFFER_DEFAULT } from './lib/playback_buffer.js';
@@ -869,15 +870,30 @@ export async function play(opts = {}) {
   // Stamp last_played so the "watched N days ago" badge updates without a
   // refresh, and record the play in watch history. Both go through the
   // server (sqlite). Best-effort — Play must not fail on a bookkeeping write.
-  api('/api/favs/touch', {
-    method: 'POST', body: JSON.stringify({ cid }),
-  }).catch(() => {});
-  if (displayName) {
-    api('/api/history', {
-      method: 'POST', body: JSON.stringify({ cid, name: displayName }),
+  const recordPlay = () => {
+    api('/api/favs/touch', {
+      method: 'POST', body: JSON.stringify({ cid }),
     }).catch(() => {});
+    if (displayName) {
+      api('/api/history', {
+        method: 'POST', body: JSON.stringify({ cid, name: displayName }),
+      }).catch(() => {});
+    }
+    loadFavs();
+  };
+
+  // "Android TV (VLC)" target: nothing plays locally — the broker pokes VLC
+  // on the box over ADB to open the getstream URL. Single playback: the TV
+  // is the session (the engine is already LAN-exposed by the target switch).
+  // Cast FIRST and only record the play if it actually launched — a failed
+  // cast (unauthorized / unreachable) must not write a phantom "watched" row.
+  if (androidtvTargetSelected) {
+    if (await castToAndroidTv(cid)) recordPlay();
+    return;
   }
-  loadFavs();
+
+  // Local playback path — record the play up front (it's about to start).
+  recordPlay();
 
   // Pure decision — see ./lib/playback_decision.js for the matrix
   // (playback_mode × default_browser × inBrowserSupported). Every
@@ -1034,14 +1050,28 @@ export function renderPlaybackTargets() {
   devOpt.value = 'device';
   devOpt.textContent = 'Another Device (e.g. smartphone with VLC)';
   devGroup.appendChild(devOpt);
+  // "Android TV (VLC)" — auto-launch VLC on an Android/Google/Fire TV box
+  // over ADB (one click, no typing on the TV). Engine-only like the device
+  // target; see onPlaybackTargetChange for the connect/cast flow.
+  const tvOpt = document.createElement('option');
+  tvOpt.value = 'androidtv';
+  tvOpt.textContent = 'Android TV (VLC — auto-play, no typing)';
+  devGroup.appendChild(tvOpt);
   sel.disabled = false;
 
   if (!view.hasAnyTarget) {
-    // No local browser/player, but "Another device" still works — land
-    // the dropdown there instead of a dead, disabled control.
-    sel.value = 'device';
-    deviceTargetSelected = true;
-    renderDeviceStream();
+    // No local browser/player. Both off-box targets still work here. Keep an
+    // already-active Android-TV selection instead of snapping back to the QR
+    // device target (a re-render must not clobber the user's choice);
+    // otherwise land on "Another device" as the sane default.
+    if (androidtvTargetSelected) {
+      sel.value = 'androidtv';
+      renderAndroidTvPanel();
+    } else {
+      sel.value = 'device';
+      deviceTargetSelected = true;
+      renderDeviceStream();
+    }
     refreshPlaybackMoveButton();
     refreshPlayGate();
     return;
@@ -1077,6 +1107,8 @@ export function renderPlaybackTargets() {
   // pick it). Otherwise remember the real target for modal-cancel revert.
   if (deviceTargetSelected) {
     sel.value = 'device';
+  } else if (androidtvTargetSelected) {
+    sel.value = 'androidtv';
   } else {
     lastNonDeviceTarget = sel.value;
   }
@@ -1369,6 +1401,7 @@ let lanExposed = false;          // last-known engine LAN-exposure state (from s
 let lanIp = '';                  // stashed from engine status for the device URL
 let lanPort = 0;
 let deviceTargetSelected = false;// 'Another device' is the active "Play in" target (transient)
+let androidtvTargetSelected = false; // 'Android TV (VLC)' is the active target (transient, like device)
 let lastNonDeviceTarget = '';    // restore the dropdown if the expose modal is cancelled
 
 // Settling-window state machine — see ./lib/engine_state.js. The
@@ -1640,6 +1673,257 @@ export function refreshDeviceStream() {
   renderDeviceStream();
 }
 
+// ---- "Android TV (VLC)" target -----------------------------------------
+//
+// Unlike "Another device" (which shows a QR you open by hand), this target
+// pokes an Android/Google/Fire TV box over network ADB and launches VLC on
+// it — one click, no typing on the TV remote. The host-side broker runs
+// `adb`; here we only enter the box IP, drive the one-time debugging
+// approval, and fire the cast on Play. Like the device target it's a
+// single-playback session, so it also LAN-exposes the engine (VLC on the
+// box fetches the getstream URL directly) — the broker builds that URL.
+
+function _androidTvIp() {
+  const el = $('androidtv-ip');
+  // Fall back to the most-recent cached IP when the field is still empty
+  // (e.g. the prefill fetch hasn't landed) so a Connect/Cast doesn't
+  // spuriously report "invalid-ip" for a box we already remember.
+  return (((el && el.value) || '').trim()) || (_tvIps[0] || '');
+}
+
+function _setAndroidTvStatus(msg, kind) {
+  const s = $('androidtv-status');
+  if (!s) return;
+  s.textContent = msg || '';
+  s.className = 'gate-hint' + (kind === 'warn' ? ' warn' : '');
+}
+
+// Show/hide the inline Android-TV panel; pull the remembered IPs from the
+// server and prefill the most-recent one so the common case (same box every
+// time) is a single click.
+function renderAndroidTvPanel() {
+  const box = $('androidtv-panel');
+  if (!box) return;
+  if (!androidtvTargetSelected) { box.style.display = 'none'; closeTvIpDropdown(); return; }
+  box.style.display = '';
+  // Sync prefill from whatever's already cached; refreshTvIps() (called by
+  // the target switch) then reconciles with the server. Kept sync so callers
+  // that need a filled field before acting can await refreshTvIps themselves.
+  const ip = $('androidtv-ip');
+  if (ip && !ip.value) ip.value = _tvIps[0] || '';
+}
+
+// ---- remembered-IP combobox (server-backed history + live search) ------
+// The IP list lives in SQLite (/api/tv/ips), shared across browsers/devices;
+// the web server records an IP whenever a connect/cast succeeds. Here we keep
+// an in-memory cache of that list, filter it client-side as the user types
+// (filterIps), and DELETE entries the user removes. filter + optimistic
+// remove are the pure bits (lib/tv_ip_history.js).
+
+let _tvIps = [];   // cache of remembered TV IPs, most-recent first
+
+// Reload the cache from the server, then (re)prefill / (re)render as needed.
+// Best-effort — a failed fetch keeps the last cache rather than blanking it.
+async function refreshTvIps() {
+  try {
+    const list = await api('/api/tv/ips');
+    if (Array.isArray(list)) _tvIps = list;
+  } catch (_) { /* keep the existing cache */ }
+  const ip = $('androidtv-ip');
+  if (ip && !ip.value) ip.value = _tvIps[0] || '';
+  const listbox = $('androidtv-ip-list');
+  if (listbox && !listbox.hidden) renderTvIpDropdown(ip ? ip.value : '');
+}
+
+// One document-level "click outside closes the dropdown" listener, added
+// only while it's open so it doesn't leak.
+let _tvIpOutsideHandler = null;
+
+function closeTvIpDropdown() {
+  const listbox = $('androidtv-ip-list');
+  if (listbox) listbox.hidden = true;
+  const ip = $('androidtv-ip');
+  if (ip) ip.setAttribute('aria-expanded', 'false');
+  if (_tvIpOutsideHandler) {
+    document.removeEventListener('click', _tvIpOutsideHandler, true);
+    _tvIpOutsideHandler = null;
+  }
+}
+
+function openTvIpDropdown() {
+  const ip = $('androidtv-ip');
+  renderTvIpDropdown(ip ? ip.value : '');
+  const listbox = $('androidtv-ip-list');
+  if (!listbox) return;
+  listbox.hidden = false;
+  if (ip) ip.setAttribute('aria-expanded', 'true');
+  if (!_tvIpOutsideHandler) {
+    _tvIpOutsideHandler = (e) => {
+      const wrap = $('androidtv-ip-wrap');
+      if (wrap && !wrap.contains(e.target)) closeTvIpDropdown();
+    };
+    document.addEventListener('click', _tvIpOutsideHandler, true);
+  }
+}
+
+// Build the dropdown body filtered by the current query. Rows carry a
+// data-tv-action + data-ip so one delegated handler (onTvIpListClick) drives
+// select / remove / close without per-row closures.
+function renderTvIpDropdown(query) {
+  const listbox = $('androidtv-ip-list');
+  if (!listbox) return;
+  const all = _tvIps;
+  const matches = filterIps(all, query);
+  listbox.textContent = '';
+
+  const head = document.createElement('div');
+  head.className = 'tv-ip-head';
+  const title = document.createElement('span');
+  title.textContent = all.length ? 'Saved TVs' : 'No saved TVs yet';
+  const close = document.createElement('button');
+  close.type = 'button';
+  close.className = 'tv-ip-close';
+  close.dataset.tvAction = 'close';
+  close.setAttribute('aria-label', 'Close');
+  close.textContent = '✕';
+  head.appendChild(title);
+  head.appendChild(close);
+  listbox.appendChild(head);
+
+  const scroll = document.createElement('div');
+  scroll.className = 'tv-ip-scroll';
+  if (!matches.length) {
+    const empty = document.createElement('div');
+    empty.className = 'tv-ip-empty';
+    empty.textContent = all.length ? 'No matches.' : 'Enter a TV IP above to start.';
+    scroll.appendChild(empty);
+  } else {
+    for (const val of matches) {
+      const row = document.createElement('div');
+      row.className = 'tv-ip-row';
+      row.setAttribute('role', 'option');
+      row.dataset.tvAction = 'select';
+      row.dataset.ip = val;
+      const label = document.createElement('span');
+      label.className = 'tv-ip-val';
+      label.textContent = val;
+      const del = document.createElement('button');
+      del.type = 'button';
+      del.className = 'tv-ip-del';
+      del.dataset.tvAction = 'remove';
+      del.dataset.ip = val;
+      del.setAttribute('aria-label', 'Remove ' + val);
+      del.title = 'Remove';
+      del.textContent = '✕';
+      row.appendChild(label);
+      row.appendChild(del);
+      scroll.appendChild(row);
+    }
+  }
+  listbox.appendChild(scroll);
+}
+
+// Delegated click on the dropdown: pick an IP, remove one, or close.
+export function onTvIpListClick(e) {
+  const hit = e.target.closest('[data-tv-action]');
+  if (!hit) return;
+  const action = hit.dataset.tvAction;
+  if (action === 'close') { closeTvIpDropdown(); return; }
+  if (action === 'remove') {
+    e.stopPropagation();   // don't also "select" the row we're deleting
+    const target = hit.dataset.ip;
+    _tvIps = removeIp(_tvIps, target);   // optimistic
+    const ip = $('androidtv-ip');
+    renderTvIpDropdown(ip ? ip.value : '');
+    // Persist the removal; re-sync from the server if it failed.
+    api('/api/tv/ips/' + encodeURIComponent(target), { method: 'DELETE' })
+      .catch(() => refreshTvIps());
+    return;
+  }
+  if (action === 'select') {
+    const ip = $('androidtv-ip');
+    if (ip) ip.value = hit.dataset.ip;
+    _setAndroidTvStatus('');
+    closeTvIpDropdown();
+  }
+}
+
+// Live search: re-filter (and open) the dropdown as the user types.
+export function onTvIpInput() { openTvIpDropdown(); }
+
+// ▾ toggle: open the full list, or close it if already open.
+export function toggleTvIpDropdown() {
+  const listbox = $('androidtv-ip-list');
+  if (listbox && !listbox.hidden) closeTvIpDropdown();
+  else openTvIpDropdown();
+}
+
+// Turn a broker tv.* status into a human guidance line. Returns true only
+// when the box is authorized and ready to receive a cast.
+function _applyTvStatus(status) {
+  switch (status) {
+    case 'authorized':
+      _setAndroidTvStatus('TV connected ✓ — press Play to cast.'); return true;
+    case 'unauthorized':
+      _setAndroidTvStatus('Approve the debugging prompt on your TV (tick '
+        + '“Always allow from this computer”), then Connect again.', 'warn');
+      return false;
+    case 'unreachable':
+      _setAndroidTvStatus('Can’t reach the TV — check the IP and that the box '
+        + 'is on, with ADB/Network debugging enabled.', 'warn'); return false;
+    case 'no-adb':
+      _setAndroidTvStatus('adb isn’t installed on the host — run '
+        + 'check_install_dependencies.sh to add it.', 'warn'); return false;
+    case 'invalid-ip':
+      _setAndroidTvStatus('Enter the TV’s IP address (e.g. 192.168.1.50).', 'warn');
+      return false;
+    default:
+      _setAndroidTvStatus('Cast failed (' + status + ').', 'warn'); return false;
+  }
+}
+
+// Connect + probe the box; drives the one-time on-TV approval. Exported for
+// the panel's Connect button. Persists the IP so next time it's prefilled.
+export async function connectAndroidTv() {
+  const ip = _androidTvIp();
+  closeTvIpDropdown();
+  if (!ip) { _applyTvStatus('invalid-ip'); return false; }
+  _setAndroidTvStatus('Connecting to ' + ip + '…');
+  try {
+    const r = await api('/api/tv/connect', {
+      method: 'POST', body: JSON.stringify({ ip }),
+    });
+    if (r && r.status === 'authorized') refreshTvIps();   // server recorded it
+    return _applyTvStatus(r && r.status);
+  } catch (e) {
+    _setAndroidTvStatus('Connect failed: ' + e.message, 'warn');
+    return false;
+  }
+}
+
+// Fire the cast: VLC opens on the box and plays the cid. Called from play()
+// when the Android-TV target is active. Returns true on a launched cast.
+async function castToAndroidTv(cid) {
+  const ip = _androidTvIp();
+  if (!ip) { _applyTvStatus('invalid-ip'); return false; }
+  _setAndroidTvStatus('Casting to ' + ip + '…');
+  try {
+    const r = await api('/api/tv/cast', {
+      method: 'POST', body: JSON.stringify({ ip, cid }),
+    });
+    if (r && r.cast) {
+      refreshTvIps();   // server recorded it — refresh the combobox cache
+      _setAndroidTvStatus('Playing on the TV ✓ (VLC).');
+      return true;
+    }
+    _applyTvStatus(r && r.status);
+    return false;
+  } catch (e) {
+    _setAndroidTvStatus('Cast failed: ' + e.message, 'warn');
+    return false;
+  }
+}
+
 // "Play in" dropdown change. "Another device" is special: it isn't a
 // saved player — it exposes the engine on the LAN (after a warning) and
 // shows a QR/URL for a player on another device. Every other value is a
@@ -1648,16 +1932,21 @@ export function refreshDeviceStream() {
 export async function onPlaybackTargetChange() {
   const sel = $('playback-target');
   const value = sel.value;
-  if (value === 'device') {
+  // "Another device" (QR) and "Android TV (VLC)" are both single-playback,
+  // engine-LAN-exposed targets — the stream is fetched off-box. They share
+  // the expose + stop-local-player setup and differ only in what they show
+  // (a QR vs the ADB connect panel).
+  if (value === 'device' || value === 'androidtv') {
+    const isTv = value === 'androidtv';
     if (!lanExposed) {
       const ok = await showConfirm({
-        title: 'Open on another device',
+        title: isTv ? 'Play on Android TV' : 'Open on another device',
         message: 'This exposes the engine on your local network so a player '
-               + 'on another device (e.g. VLC on a phone or tablet) can reach '
+               + 'on another device (VLC on a TV, phone or tablet) can reach '
                + 'it. While it is on, anything on your network can reach the '
                + 'engine — use only on a network you trust. It turns off when '
                + 'you pick another player.',
-        confirmText: 'Expose & show link',
+        confirmText: 'Expose engine',
       });
       if (!ok) { sel.value = lastNonDeviceTarget || 'browser'; return; }
       // Re-binding the engine to the LAN re-spawns the container, which
@@ -1677,26 +1966,40 @@ export async function onPlaybackTargetChange() {
         hideBusy();
       }
     }
-    // Device target is the session — single playback. Stop any local
+    // The off-box target is the session — single playback. Stop any local
     // player so nothing keeps streaming here: the in-tab mpegts player
     // AND any host-side VLC/mpv.
     if (mpegtsPlayer) stopInBrowserPlayback();
     try { await api('/api/player/stop', { method: 'POST', body: '{}' }); }
     catch (_) { /* best-effort */ }
     livePlaybackTarget = '';
-    deviceTargetSelected = true;
-    renderDeviceStream();
+    deviceTargetSelected = !isTv;
+    androidtvTargetSelected = isTv;
+    if (isTv) {
+      hideDeviceStream();
+      renderAndroidTvPanel();
+      // Load the remembered IPs (fills the field) BEFORE probing, so the
+      // one-time on-TV approval can be dealt with against the saved box
+      // rather than firing connect against a still-empty field.
+      await refreshTvIps();
+      connectAndroidTv();   // fire-and-forget; updates the panel status
+    } else {
+      renderAndroidTvPanel();   // hides the TV panel
+      renderDeviceStream();
+    }
     refreshPlaybackMoveButton();
-    refreshPlayGate();   // disable Play + hide buffer for device mode
+    refreshPlayGate();
     return;
   }
-  // Leaving the device target → close exposure (transient) and hide the QR.
-  // Re-binding to loopback re-spawns the engine, so block with the overlay
-  // the same way the expose path does.
-  const wasDevice = deviceTargetSelected;
-  if (deviceTargetSelected) {
+  // Leaving a device/androidtv target → close exposure (transient) and hide
+  // the QR / TV panel. Re-binding to loopback re-spawns the engine, so block
+  // with the overlay the same way the expose path does.
+  const wasOffBox = deviceTargetSelected || androidtvTargetSelected;
+  if (wasOffBox) {
     deviceTargetSelected = false;
+    androidtvTargetSelected = false;
     hideDeviceStream();
+    renderAndroidTvPanel();   // hides the TV panel
     showBusy('Restarting engine to close network access…');
     try {
       const s = await api('/api/engine/lan-expose', {
@@ -1713,11 +2016,11 @@ export async function onPlaybackTargetChange() {
   refreshPlayGate();     // re-enable Play + restore buffer
   // Await so cfg reflects the new target before we (maybe) play below.
   await persistPlaybackTarget(value);
-  // Coming off the device target with a stream selected → start it on the
-  // newly chosen target (This tab, VLC/mpv, …). Device mode wasn't playing
+  // Coming off an off-box target with a stream selected → start it on the
+  // newly chosen target (This tab, VLC/mpv, …). Off-box mode wasn't playing
   // here, so the user expects it to resume locally now. Plain target
-  // switches (not from device) keep the old behaviour: no auto-play.
-  if (wasDevice && current && current.cid) {
+  // switches keep the old behaviour: no auto-play.
+  if (wasOffBox && current && current.cid) {
     $('cid-input').value = current.cid;
     refreshClearButton();
     showBusy('Starting…');
@@ -1743,6 +2046,19 @@ function refreshPlayGate() {
       'Playing on another device — open the link or scan the QR below on '
       + 'that device. Or pick another player to play here.';
     hint.className = 'gate-hint';
+    return;
+  }
+  // "Android TV (VLC)" target: no LOCAL playback or buffer (the box's VLC
+  // buffers), but Play IS active — pressing it casts to the TV. Leave the
+  // engine gate (describePlayButtonGate below) to disable Play when the
+  // engine isn't ready; only override the hint/buffer here when it's fine.
+  if (androidtvTargetSelected) {
+    if (bufferField) bufferField.style.display = 'none';
+    const view = describePlayButtonGate(engineState.last);
+    btn.disabled = view.disabled;
+    hint.textContent = view.disabled ? view.hint.text
+      : 'Press Play to cast to the Android TV (VLC opens on the box).';
+    hint.className = view.disabled ? view.hint.className : 'gate-hint';
     return;
   }
   if (bufferField) bufferField.style.display = '';

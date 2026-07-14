@@ -262,8 +262,39 @@ offer_players() {
   esac
 }
 
+# ---- optional: adb for Android TV casting ----------------------------------
+# The "Android TV (VLC)" playback target pokes an Android/Google/Fire TV box
+# over network ADB and launches VLC on it — the host-side broker runs `adb`.
+# It's optional: nothing else needs it, so we only offer, never require.
+adb_pkg() {
+  case "$PM" in
+    apt)                 echo android-tools-adb ;;
+    dnf|yum|pacman|zypper) echo android-tools ;;
+    apk)                 echo adb ;;
+    *)                   echo android-tools ;;
+  esac
+}
+
+offer_adb() {
+  [ -t 0 ] || return 0   # never prompt non-interactively
+  section "Optional: Android TV casting (adb)"
+  if command -v adb >/dev/null 2>&1; then
+    ok "adb already installed — the 'Android TV (VLC)' target is available"
+    return
+  fi
+  echo "The 'Android TV (VLC)' target auto-plays streams on an Android TV box"
+  echo "(one-click, no typing on the TV remote). It needs 'adb' on this host."
+  [ "$PM" = unknown ] && { warn "no known package manager — install 'adb' manually to use it."; return 0; }
+  printf 'Install adb now? [y/N]: '; read -r ans
+  case "$ans" in
+    y|Y) pm_install "$(adb_pkg)" && ok "adb installed — 'Android TV (VLC)' target ready" ;;
+    *)   echo "skipped adb (install later to enable Android TV casting)." ;;
+  esac
+}
+
 check_browser_h264
 check_nvidia_cdi
 offer_players
+offer_adb
 
 section "Done."

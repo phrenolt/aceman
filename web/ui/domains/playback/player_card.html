@@ -24,4 +24,21 @@
         <a id="device-stream-link" class="device-url" href="#" target="_blank"
            rel="noopener noreferrer" style="display:none"></a>
       </div>
+      <div id="androidtv-panel" style="display:none">
+        <div class="field" style="gap:.4rem">
+          <label class="field-label" for="androidtv-ip">TV IP</label>
+          <div id="androidtv-ip-wrap">
+            <input type="text" id="androidtv-ip" inputmode="decimal"
+                   placeholder="192.168.1.50 — type to search saved TVs"
+                   autocomplete="off" spellcheck="false"
+                   role="combobox" aria-expanded="false"
+                   aria-controls="androidtv-ip-list">
+            <button id="androidtv-ip-toggle" type="button"
+                    aria-label="Show saved TV IPs" title="Saved TVs">▾</button>
+            <div id="androidtv-ip-list" role="listbox" hidden></div>
+          </div>
+          <button id="androidtv-connect">Connect</button>
+        </div>
+        <div class="gate-hint" id="androidtv-status"></div>
+      </div>
     </div>
