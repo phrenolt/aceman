@@ -888,7 +888,14 @@ export async function play(opts = {}) {
   // Cast FIRST and only record the play if it actually launched — a failed
   // cast (unauthorized / unreachable) must not write a phantom "watched" row.
   if (androidtvTargetSelected) {
-    if (await castToAndroidTv(cid)) recordPlay();
+    if (await castToAndroidTv(cid)) {
+      // The TV is now the live session: mark it so the main Play button
+      // flips ▶ → ⏹ (Stop) and the "live" pip lights up. Stop then routes
+      // to stopAndroidTv() (force-stop VLC), see the play-btn handler.
+      livePlaybackTarget = 'androidtv';
+      recordPlay();
+      refreshPlaybackMoveButton();   // repaints the Play/Stop button + pip
+    }
     return;
   }
 
@@ -1955,6 +1962,14 @@ export async function stopAndroidTv() {
 export async function onPlaybackTargetChange() {
   const sel = $('playback-target');
   const value = sel.value;
+  // Leaving a LIVE Android-TV session (onchange only fires on a real change,
+  // so value is never still 'androidtv' here): force-stop VLC on the box so
+  // it doesn't keep playing our stream independently — and so resuming on a
+  // local target below doesn't double up. Best-effort.
+  if (livePlaybackTarget === 'androidtv') {
+    livePlaybackTarget = '';
+    try { await stopAndroidTv(); } catch (_) { /* best-effort */ }
+  }
   // "Another device" (QR) and "Android TV (VLC)" are both single-playback,
   // engine-LAN-exposed targets — the stream is fetched off-box. They share
   // the expose + stop-local-player setup and differ only in what they show
