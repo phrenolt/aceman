@@ -31,6 +31,8 @@ import { KEYS } from '../../lib/storage_keys.js';
 import { saveLastPlay, loadLastPlay, clearLastPlay } from './lib/last_played_stream.js';
 import { inBrowserPlaybackSupported } from './lib/playback_feature_detect.js';
 import { isFatalMpegtsError, isFatalVideoError } from './lib/playback_error.js';
+import { VOLUME_STEP, stepVolume, describeVolume, parseStoredVolume }
+  from './lib/volume_control.js';
 import { buildPlaybackOptions } from './lib/playback_options.js';
 import { buildLanStreamUrl } from './lib/lan_url.js';
 import { filterIps, removeIp } from './lib/tv_ip_history.js';
@@ -298,6 +300,7 @@ function startInBrowserPlayback(cid) {
   v.addEventListener('canplay',  _clearStall);
 
   mpegtsPlayer.attachMediaElement(v);
+  _restoreVolume(v);   // apply the remembered level/mute before playback starts
   mpegtsPlayer.load();
   // play() returns a promise; if the user hasn't interacted with the
   // page yet, autoplay-without-mute will reject — surface that to them.
@@ -703,6 +706,67 @@ function stopInBrowserPlayback() {
     livePlaybackTarget = '';
     if (typeof refreshPlaybackMoveButton === 'function') refreshPlaybackMoveButton();
   }
+}
+
+// ---- keyboard volume control (in-tab player) ---------------------------
+// ↑/↓ nudge by ±5%, M toggles mute (see main.js for the key wiring + the
+// hover/focus gate). The native <video> slider stays the mouse control;
+// these just add the keyboard layer, persist the level, and flash an
+// overlay (the controls bar is usually hidden mid-playback, so a keypress
+// would otherwise give no feedback). Level + mute persist in localStorage.
+
+// Apply the remembered level/mute to a freshly-attached <video>. New tabs
+// with nothing saved default to full volume, unmuted (the browser default).
+function _restoreVolume(v) {
+  if (!v) return;
+  v.volume = parseStoredVolume(localStorage.getItem(KEYS.VOLUME), 1);
+  v.muted = localStorage.getItem(KEYS.MUTED) === '1';
+}
+
+function _persistVolume(v) {
+  localStorage.setItem(KEYS.VOLUME, String(v.volume));
+  localStorage.setItem(KEYS.MUTED, v.muted ? '1' : '0');
+}
+
+// True only while the in-tab <video> is actually on screen — the gate main.js
+// checks before it claims the arrow keys (so they don't hijack page scroll
+// when nothing is playing here).
+export function inBrowserVideoVisible() {
+  const v = $('pb-video');
+  return !!(v && v.style.display !== 'none');
+}
+
+// Nudge the level by `delta` (fraction). Raising from a muted state unmutes
+// (matches every player — you turned it up, you want to hear it).
+function nudgeVolume(delta) {
+  const v = $('pb-video');
+  if (!v) return;
+  v.volume = stepVolume(v.volume, delta);
+  if (delta > 0 && v.muted) v.muted = false;
+  _persistVolume(v);
+  _flashVolumeOverlay(v);
+}
+
+export function volumeUp()   { nudgeVolume(VOLUME_STEP); }
+export function volumeDown() { nudgeVolume(-VOLUME_STEP); }
+
+export function toggleMute() {
+  const v = $('pb-video');
+  if (!v) return;
+  v.muted = !v.muted;
+  _persistVolume(v);
+  _flashVolumeOverlay(v);
+}
+
+let _volumeOverlayTimer = null;
+function _flashVolumeOverlay(v) {
+  const el = $('pb-volume-overlay');
+  if (!el) return;
+  const { glyph, text } = describeVolume(v.volume, v.muted);
+  el.textContent = glyph + ' ' + text;
+  el.classList.add('show');
+  clearTimeout(_volumeOverlayTimer);
+  _volumeOverlayTimer = setTimeout(() => el.classList.remove('show'), 900);
 }
 
 // A fatal in-browser playback failure: the channel's container/codec can't be
