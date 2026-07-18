@@ -128,14 +128,15 @@ import { parseId, loadPlayers, loadBrowsers, detectCurrentBrowser, detectedPlaye
           try { await api('/api/player/stop', { method: 'POST', body: '{}' }); }
           catch (_) { /* best-effort */ }
         }
-        // Stop clears every visible referent in one step:
+        // Stop tears down the live stream but LEAVES the Ace ID in the Watch
+        // field, so ▶ Play (or Enter) re-plays it without retyping. The field
+        // is display-only now — there's no search collision to clear (the ✕
+        // button is the explicit "blank the field" affordance).
         //   clearNowPlaying()  resets the Watch card, hides the video,
         //                      clears the tab title, kills the in-browser
         //                      proxy, and clears `current`.
-        //   clearCidInput()    wipes the cid so a new search can be typed.
         //   updateSaveButton() hides the now-stale Save-as-fav button.
         clearNowPlaying();
-        clearCidInput();
         updateSaveButton();
       } finally { hideBusy(); }
     } else {
