@@ -145,10 +145,13 @@ import { parseId, loadPlayers, loadBrowsers, detectCurrentBrowser, detectedPlaye
     }
   };
   // Keyboard volume for the in-tab player: ↑/↓ = ±5%, M = mute (the
-  // YouTube/VLC convention). Gated so it only fires when the player is
-  // "engaged" — the pointer is over the video OR the video has focus — and
-  // never while a text field is focused. That keeps the arrow keys free for
-  // page scroll / field editing when the user isn't actually watching.
+  // YouTube/VLC convention). Two tiers, both requiring an in-tab video:
+  //   • Alt+↑/↓ is GLOBAL — fires regardless of hover/focus, even while a
+  //     text field is focused. The Alt modifier makes it deliberate and
+  //     collides with nothing standard (Alt+←/→ is nav; Alt+↑/↓ is unbound).
+  //   • Plain ↑/↓ and M are "engaged"-only — the pointer is over the video
+  //     OR the video has focus, and no text field is focused — so bare arrows
+  //     stay free for page scroll / field editing when you're not watching.
   let _pointerOverPlayer = false;
   const tvWrap = $('pb-video-wrap');
   if (tvWrap) {
@@ -156,9 +159,18 @@ import { parseId, loadPlayers, loadBrowsers, detectCurrentBrowser, detectedPlaye
     tvWrap.addEventListener('mouseleave', () => { _pointerOverPlayer = false; });
   }
   document.addEventListener('keydown', e => {
-    if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown'
-        && e.key !== 'm' && e.key !== 'M') return;
+    const isVol = e.key === 'ArrowUp' || e.key === 'ArrowDown';
+    const isMute = e.key === 'm' || e.key === 'M';
+    if (!isVol && !isMute) return;
     if (!inBrowserVideoVisible()) return;
+    // Global tier: Alt+↑/↓ works anywhere.
+    if (isVol && e.altKey) {
+      e.preventDefault();
+      if (e.key === 'ArrowUp') volumeUp(); else volumeDown();
+      return;
+    }
+    if (e.altKey) return;   // any other Alt combo isn't ours
+    // Engaged tier: bare ↑/↓/M, only when watching and not typing.
     const ae = document.activeElement;
     if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA'
                || ae.isContentEditable)) return;
