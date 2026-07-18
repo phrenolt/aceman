@@ -119,8 +119,15 @@ import { parseId, loadPlayers, loadBrowsers, detectCurrentBrowser, detectedPlaye
     if (livePlaybackTarget) {
       showBusy('Stopping…');
       try {
-        try { await api('/api/player/stop', { method: 'POST', body: '{}' }); }
-        catch (_) { /* best-effort */ }
+        if (livePlaybackTarget === 'androidtv') {
+          // The TV is the session — nothing plays locally. Force-stop VLC
+          // on the box (a clean exit that releases our getstream); there's
+          // no in-tab / host player to /api/player/stop.
+          await stopAndroidTv();
+        } else {
+          try { await api('/api/player/stop', { method: 'POST', body: '{}' }); }
+          catch (_) { /* best-effort */ }
+        }
         // Stop clears every visible referent in one step:
         //   clearNowPlaying()  resets the Watch card, hides the video,
         //                      clears the tab title, kills the in-browser
