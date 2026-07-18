@@ -30,7 +30,7 @@ import { parseId, loadPlayers, loadBrowsers, detectCurrentBrowser, detectedPlaye
          renderPlaybackTargets, restartStream, refreshEngineStatus, engineState,
          clearNowPlaying, clearCidInput, refreshClearButton, setTabTitle, setNowPlayingName,
          waitForEngineReady, waitForBackend, refreshPlayerRowAlignment,
-         movePlaybackToSelection, toggleEngine, toggleLanExpose, onPlaybackTargetChange, refreshDeviceStream, connectAndroidTv, stopAndroidTv, onTvIpInput, onTvIpListClick, toggleTvIpDropdown, onPlaybackTitleClick, onPlaybackTitleDblClick, toggleDeviceLink, saveAutostart,
+         movePlaybackToSelection, toggleEngine, toggleLanExpose, onPlaybackTargetChange, refreshDeviceStream, connectAndroidTv, stopAndroidTv, onTvIpInput, onTvIpListClick, toggleTvIpDropdown, volumeUp, volumeDown, toggleMute, inBrowserVideoVisible, onPlaybackTitleClick, onPlaybackTitleDblClick, toggleDeviceLink, saveAutostart,
          setCfg, setCurrent } from './domains/playback/index.js';
 
 // ---- init --------------------------------------------------------------
@@ -144,6 +144,30 @@ import { parseId, loadPlayers, loadBrowsers, detectCurrentBrowser, detectedPlaye
       try { await play(); } finally { hideBusy(); }
     }
   };
+  // Keyboard volume for the in-tab player: ↑/↓ = ±5%, M = mute (the
+  // YouTube/VLC convention). Gated so it only fires when the player is
+  // "engaged" — the pointer is over the video OR the video has focus — and
+  // never while a text field is focused. That keeps the arrow keys free for
+  // page scroll / field editing when the user isn't actually watching.
+  let _pointerOverPlayer = false;
+  const tvWrap = $('pb-video-wrap');
+  if (tvWrap) {
+    tvWrap.addEventListener('mouseenter', () => { _pointerOverPlayer = true; });
+    tvWrap.addEventListener('mouseleave', () => { _pointerOverPlayer = false; });
+  }
+  document.addEventListener('keydown', e => {
+    if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown'
+        && e.key !== 'm' && e.key !== 'M') return;
+    if (!inBrowserVideoVisible()) return;
+    const ae = document.activeElement;
+    if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA'
+               || ae.isContentEditable)) return;
+    if (!_pointerOverPlayer && ae !== $('pb-video')) return;
+    e.preventDefault();   // own the key: no page scroll / native double-apply
+    if (e.key === 'ArrowUp') volumeUp();
+    else if (e.key === 'ArrowDown') volumeDown();
+    else toggleMute();
+  });
   // The Watch input is a read-only DISPLAY of the playing Ace ID. It
   // becomes editable only on double-click (the rare "paste a specific
   // id" case). Enter plays; Escape / blur returns it to display mode.

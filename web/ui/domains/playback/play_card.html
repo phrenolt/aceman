@@ -35,8 +35,14 @@
     <div class="gate-hint" id="play-hint"></div>
     <div class="err" id="err"></div>
     <div id="now-playing" style="display:none">
-      <video id="pb-video" controls playsinline
-             style="display:none; width:100%; max-height:55vh; background:#000; margin:.5rem 0"></video>
+      <div id="pb-video-wrap">
+        <video id="pb-video" controls playsinline
+               style="display:none; width:100%; max-height:55vh; background:#000; margin:.5rem 0"></video>
+        <!-- Transient flash on ↑/↓/M — feedback only (the native slider is
+             the control), fades out on its own. aria-hidden: the level is
+             conveyed by the native control's own a11y. -->
+        <div id="pb-volume-overlay" aria-hidden="true"></div>
+      </div>
       <div class="row" style="justify-content: center; gap: .5rem; flex-wrap: wrap">
         <div class="gate-hint" id="pb-video-status" style="margin: 0; min-width: 0; text-align: center" title="Click to hide stats"></div>
         <button id="show-stats-btn" style="display:none">Display Stats</button>

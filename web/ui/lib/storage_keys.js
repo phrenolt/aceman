@@ -28,4 +28,6 @@ export const KEYS = Object.freeze({
   LIBRARY_DEFAULT_TAB: 'aceman.libraryDefaultTab', // tab to open the Library on: 'last'|search|favourites|history
   RELATIVE_TIMES: 'aceman.relativeTimes',         // show "3d ago" vs an absolute stamp
   SKIP_DELETE_CONFIRM: 'aceman.skipDeleteConfirm', // skip the "are you sure?" on deletes
+  VOLUME: 'aceman.volume',                        // in-tab player volume 0..1
+  MUTED: 'aceman.muted',                          // in-tab player muted flag ('1'/'0')
 });

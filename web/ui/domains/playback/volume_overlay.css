@@ -1,0 +1,38 @@
+/* In-browser player: transient volume overlay (flashes on ↑/↓/M).
+   The wrapper is the positioning context; the video keeps its own margin so
+   the wrap hugs it exactly (the overlay centres over the video, not the
+   status row below it). */
+#pb-video-wrap {
+  position: relative;
+}
+
+#pb-volume-overlay {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%) scale(.96);
+  display: flex;
+  align-items: center;
+  gap: .4rem;
+  padding: .5rem .85rem;
+  border-radius: .6rem;
+  background: rgba(0, 0, 0, .72);
+  color: #fff;
+  font-size: 1.15rem;
+  font-variant-numeric: tabular-nums;   /* percentage doesn't jitter width */
+  line-height: 1;
+  pointer-events: none;                  /* never intercepts clicks on the video */
+  opacity: 0;
+  transition: opacity .18s ease, transform .18s ease;
+  z-index: 2;
+}
+
+/* .show is toggled on for ~0.9s per keypress, then removed. */
+#pb-volume-overlay.show {
+  opacity: 1;
+  transform: translate(-50%, -50%) scale(1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #pb-volume-overlay { transition: opacity .1s linear; }
+}

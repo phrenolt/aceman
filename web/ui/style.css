@@ -345,6 +345,7 @@
 
 /*@include domains/playback/device_stream.css*/
 /*@include domains/playback/android_tv.css*/
+/*@include domains/playback/volume_overlay.css*/
 
   /* Icon-only buttons (▶ in fav/search rows). Slightly larger glyph,
      fixed footprint so adjacent rows align even with one-character text. */
