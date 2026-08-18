@@ -22,7 +22,7 @@ echo  TRUST NOTE: this pulls code from the internet that will run
 echo  on your machine on the next launch. Only proceed if you trust
 echo  the project author and have reviewed the repository:
 echo.
-echo      https://github.com/curiousconcept/aceman
+echo      https://github.com/phrenolt/aceman
 echo.
 choice /c YN /m "Update now (discards local repo edits)"
 if errorlevel 2 (

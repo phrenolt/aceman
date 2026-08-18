@@ -5,9 +5,9 @@
 <h1 align="center">aceman</h1>
 
 <p align="center">
-  <a href="https://github.com/curiousconcept/aceman/actions/workflows/broker.yml"><img src="https://github.com/curiousconcept/aceman/actions/workflows/broker.yml/badge.svg?branch=main" alt="broker"></a>
-  <a href="https://github.com/curiousconcept/aceman/actions/workflows/web.yml"><img src="https://github.com/curiousconcept/aceman/actions/workflows/web.yml/badge.svg?branch=main" alt="web"></a>
-  <a href="https://github.com/curiousconcept/aceman/actions/workflows/js.yml"><img src="https://github.com/curiousconcept/aceman/actions/workflows/js.yml/badge.svg?branch=main" alt="js"></a>
+  <a href="https://github.com/phrenolt/aceman/actions/workflows/broker.yml"><img src="https://github.com/phrenolt/aceman/actions/workflows/broker.yml/badge.svg?branch=main" alt="broker"></a>
+  <a href="https://github.com/phrenolt/aceman/actions/workflows/web.yml"><img src="https://github.com/phrenolt/aceman/actions/workflows/web.yml/badge.svg?branch=main" alt="web"></a>
+  <a href="https://github.com/phrenolt/aceman/actions/workflows/js.yml"><img src="https://github.com/phrenolt/aceman/actions/workflows/js.yml/badge.svg?branch=main" alt="js"></a>
 </p>
 
 Watch [Ace Stream](https://acestream.org) content from a **sandboxed
@@ -23,7 +23,7 @@ host-side allow-list broker means the web never touches `podman` or
 anything host-related directly.
 
 <p align="center">
-  <a href="https://www.patreon.com/phrenolt"><img src="web/ui/assets/static/curiousconcept-patreon-button-dark.png" alt="Support on Patreon" width="240"></a>
+  <a href="https://www.patreon.com/phrenolt"><img src="web/ui/assets/static/phrenolt-patreon-button-dark.png" alt="Support on Patreon" width="240"></a>
 </p>
 
 ## Screenshots
@@ -76,7 +76,7 @@ so **no media player is required** — a player is *optional*, only for the
 external-player CLI path.
 
 ```bash
-git clone https://github.com/curiousconcept/aceman.git
+git clone https://github.com/phrenolt/aceman.git
 cd aceman
 ./check_install_dependencies.sh
 ```
@@ -223,7 +223,7 @@ downloads the repo, extracts it to your Downloads, and — after you press
 Enter — launches the installer:
 
 ```powershell
-[Net.ServicePointManager]::SecurityProtocol='Tls12'; Invoke-WebRequest https://github.com/curiousconcept/aceman/archive/refs/heads/main.zip -OutFile "$env:TEMP\aceman.zip"; Expand-Archive "$env:TEMP\aceman.zip" "$env:USERPROFILE\Downloads" -Force; $d="$env:USERPROFILE\Downloads\aceman-main\wsl"; Read-Host "Extracted to $d - press Enter to run install.bat"; Start-Process "$d\install.bat"
+[Net.ServicePointManager]::SecurityProtocol='Tls12'; Invoke-WebRequest https://github.com/phrenolt/aceman/archive/refs/heads/main.zip -OutFile "$env:TEMP\aceman.zip"; Expand-Archive "$env:TEMP\aceman.zip" "$env:USERPROFILE\Downloads" -Force; $d="$env:USERPROFILE\Downloads\aceman-main\wsl"; Read-Host "Extracted to $d - press Enter to run install.bat"; Start-Process "$d\install.bat"
 ```
 
 `install.bat` self-elevates (approve the UAC prompt), provisions WSL + Ubuntu,

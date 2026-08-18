@@ -657,7 +657,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         "mpegts.min.js":                          ("application/javascript", "ui/domains/playback/vendor/mpegts.min.js"),
         "qrcode-generator.js":                    ("application/javascript", "ui/domains/playback/vendor/qrcode-generator.js"),
         "favicon.ico":                            ("image/x-icon",  "ui/assets/static/favicon.ico"),
-        "curiousconcept-patreon-button-dark.png": ("image/png",     "ui/assets/static/curiousconcept-patreon-button-dark.png"),
+        "phrenolt-patreon-button-dark.png":       ("image/png",     "ui/assets/static/phrenolt-patreon-button-dark.png"),
     }
 
     def _handle_static(self, name: str) -> None:

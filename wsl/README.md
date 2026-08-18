@@ -16,7 +16,7 @@ in the top-right of the box). It downloads the whole repo, extracts it into
 your Downloads, and — after you press Enter — launches `install.bat` for you:
 
 ```powershell
-[Net.ServicePointManager]::SecurityProtocol='Tls12'; Invoke-WebRequest https://github.com/curiousconcept/aceman/archive/refs/heads/main.zip -OutFile "$env:TEMP\aceman.zip"; Expand-Archive "$env:TEMP\aceman.zip" "$env:USERPROFILE\Downloads" -Force; $d="$env:USERPROFILE\Downloads\aceman-main\wsl"; Read-Host "Extracted to $d - press Enter to run install.bat"; Start-Process "$d\install.bat"
+[Net.ServicePointManager]::SecurityProtocol='Tls12'; Invoke-WebRequest https://github.com/phrenolt/aceman/archive/refs/heads/main.zip -OutFile "$env:TEMP\aceman.zip"; Expand-Archive "$env:TEMP\aceman.zip" "$env:USERPROFILE\Downloads" -Force; $d="$env:USERPROFILE\Downloads\aceman-main\wsl"; Read-Host "Extracted to $d - press Enter to run install.bat"; Start-Process "$d\install.bat"
 ```
 
 `install.bat` asks for admin (approve the UAC prompt) and takes it from there.

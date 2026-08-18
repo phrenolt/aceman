@@ -3,7 +3,7 @@ set -euo pipefail
 
 # ---- config ----
 NEWUSER="ace"                                          # your Linux username
-REPO="https://github.com/curiousconcept/aceman.git"    # HTTPS = no SSH key needed
+REPO="https://github.com/phrenolt/aceman.git"          # HTTPS = no SSH key needed
 
 echo ">> creating user $NEWUSER"
 if ! id "$NEWUSER" &>/dev/null; then
