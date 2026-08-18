@@ -29,28 +29,28 @@ anything host-related directly.
 ## Screenshots
 
 <p align="center">
-  <img src="docs/screenshots/aceman-web.jpg" alt="aceman web UI playing a stream in the browser" width="820">
+  <img src="docs/screenshots/1_aceman.png" alt="Aceman web UI playing a stream alongside Library search results" width="820">
 </p>
 
 <table>
   <tr>
     <td width="50%" valign="top">
-      <img src="docs/screenshots/search-fav.png" alt="Built-in search and saved favourites"><br>
-      <sub><b>Search + favourites</b> — search streams, save channels to a local list.</sub>
+      <img src="docs/screenshots/2_settings.png" alt="Player, engine, setup, GPU acceleration, and lifecycle settings"><br>
+      <sub><b>Settings + tools</b> — configure playback and acceleration, manage the engine, and inspect live logs.</sub>
     </td>
     <td width="50%" valign="top">
-      <img src="docs/screenshots/history.png" alt="Watch history, autocomplete, and setup tools"><br>
-      <sub><b>History + tools</b> — recent-channel autocomplete, engine/app launcher, lifecycle.</sub>
+      <img src="docs/screenshots/3_play_options.png" alt="Playback target options for browsers, VLC, and other devices"><br>
+      <sub><b>Play anywhere</b> — use the browser, an external player, another device, or Android TV.</sub>
     </td>
   </tr>
   <tr>
     <td width="50%" valign="top">
-      <img src="docs/screenshots/config.png" alt="GPU settings and live server, broker, and engine logs"><br>
-      <sub><b>Config + live logs</b> — GPU acceleration, and tailed server / broker / engine logs.</sub>
+      <img src="docs/screenshots/4_library_settings.png" alt="Library pagination, sorting, and watch-history settings"><br>
+      <sub><b>Library settings</b> — tune pagination, sorting, dates, and watch-history behaviour.</sub>
     </td>
     <td width="50%" valign="top">
-      <img src="docs/screenshots/buffer-config.png" alt="Player target and buffer settings"><br>
-      <sub><b>Player + buffer</b> — choose where playback opens and tune the buffer.</sub>
+      <img src="docs/screenshots/5_channels_probe.png" alt="Channel probe scope, freshness, and deep-check settings"><br>
+      <sub><b>Channel health</b> — probe selected lists, deep-check streams, and manage diagnostic results.</sub>
     </td>
   </tr>
 </table>
